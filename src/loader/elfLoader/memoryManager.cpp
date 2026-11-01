@@ -460,6 +460,10 @@ static void *guardedAlloc(size_t size, size_t alignment)
     unsigned char *base = (unsigned char *)_aligned_malloc(size + 2 * GUARD, alignment);
     if (!base)
         return nullptr;
+    // Zeroed, as glibc's fresh pages almost always are: the games read fields
+    // they never set, and the CRT's reused blocks hold old data (race scenes
+    // drawn all white now and then in Cruis'n Blast).
+    memset(base + GUARD, 0, size);
     AllocRecord record = {(void *)(base + GUARD), base, size, 1};
     writeGuards(record);
     noteAlloc(base, size);
