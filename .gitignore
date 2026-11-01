@@ -1,0 +1,21 @@
+.cache
+build-bato/
+build-linux/
+build-ubuntu/
+build-win32/
+compile_commands.json
+tools/dongle-recording/*.o
+tools/dongle-recording/*.elf
+tools/dongle-recording/*.bin
+
+# The packaged loader and the games it is tested with (copyrighted game
+# files), and local leftovers of the build scripts.
+dist-win32/
+src.zip
+*.log
+
+# Not published: the dongle research (bypass notes, recording tools, key
+# dumps).
+docs/hasp-bypass.md
+docs/dongle-recording.md
+tools/dongle-recording/
