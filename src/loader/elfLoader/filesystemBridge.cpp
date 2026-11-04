@@ -178,6 +178,13 @@ namespace FileSystemBridge
     FILE *bridgeFdopen(int fd, const char *mode)
     {
         log_trace("Intercepted fdopen");
+        // Binary, as on Linux: without 'b' msvcrt's stream translates \r\n.
+        char binary[16];
+        if (mode && !strchr(mode, 'b') && !strchr(mode, 't') && strlen(mode) + 2 <= sizeof(binary))
+        {
+            snprintf(binary, sizeof(binary), "%sb", mode);
+            mode = binary;
+        }
         return fdopen(fd, mode);
     }
 
