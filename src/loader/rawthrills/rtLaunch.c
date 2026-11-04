@@ -15,6 +15,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/resource.h>
+#endif
 
 #include "rtGame.h"
 #include "../config/iniParser.h"
