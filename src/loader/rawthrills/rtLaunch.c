@@ -21,6 +21,7 @@
 
 #include "rtGame.h"
 #include "../config/iniParser.h"
+#include "../config/gameData.h"
 #include "../platform/win32/posix.h"
 #include "../log/log.h"
 
@@ -368,15 +369,17 @@ static void cacheDir(char *buf, size_t size, uint32_t fileCrc32)
         snprintf(buf, size, "%s/.cache/linuxloader/rawthrills/%08x", home ? home : "/tmp", fileCrc32);
 }
 
-// [Display] WIDTH and HEIGHT of the configuration, 0 if not set.
-static void configSize(const char *configPath, int *width, int *height)
+// [Display] WIDTH and HEIGHT of the configuration, else the game's default
+// (gameData.c), the size the loader then gives its window too.
+static void configSize(const RtGame *game, const char *configPath, int *width, int *height)
 {
     IniConfig *ini = configPath && configPath[0] ? iniLoad(configPath) : NULL;
     const char *w = ini ? iniGetValue(ini, "Display", "WIDTH") : NULL;
     const char *h = ini ? iniGetValue(ini, "Display", "HEIGHT") : NULL;
+    const GameData *data = getGameData(game->crc32);
 
-    *width = w ? atoi(w) : 0;
-    *height = h ? atoi(h) : 0;
+    *width = w ? atoi(w) : data ? data->width : 0;
+    *height = h ? atoi(h) : data ? data->height : 0;
     if (ini)
         iniFree(ini);
 }
@@ -397,7 +400,7 @@ void rtPrepareCommand(char *command, size_t size, uint32_t fileCrc32, const char
     if (game->sizeArgument)
     {
         int width, height;
-        configSize(configPath, &width, &height);
+        configSize(game, configPath, &width, &height);
         // A turned frame is drawn at the game's own size, the only one it
         // takes (see rtFrame.c): the game is told it whatever [Display] says.
         if (game->frameTurn)

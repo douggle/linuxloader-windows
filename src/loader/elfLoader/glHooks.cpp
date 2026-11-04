@@ -607,6 +607,12 @@ extern "C" void __attribute__((cdecl)) wrap_glTexParameterfv(GLenum target, GLen
         glad_glTexParameterfv(target, pname, params);
 }
 
+extern "C" void __attribute__((cdecl)) wrap_glTexParameteriv(GLenum target, GLenum pname, const GLint *params)
+{
+    if (glad_glTexParameteriv)
+        glad_glTexParameteriv(target, pname, params);
+}
+
 extern "C" void __attribute__((cdecl)) wrap_glPointParameterf(GLenum pname, GLfloat param)
 {
     if (glad_glPointParameterf)
@@ -833,8 +839,19 @@ extern "C" void __attribute__((cdecl)) wrap_glReadPixels(GLint x, GLint y, GLsiz
 
 extern "C" void __attribute__((cdecl)) wrap_glShaderSource(GLuint shader, GLsizei count, const GLchar *const *string, const GLint *length)
 {
-    if (glad_glShaderSource)
-        glad_glShaderSource(shader, count, string, length);
+    if (!glad_glShaderSource)
+        return;
+    // The family's fixes, as on Linux (graphics/shaderPatches.c): without
+    // them the shaders that need one do not compile, and draw untextured.
+    char *patched = shaderPatchedSource(count, string, length);
+    if (patched)
+    {
+        const GLchar *one = patched;
+        glad_glShaderSource(shader, 1, &one, NULL);
+        free(patched);
+        return;
+    }
+    glad_glShaderSource(shader, count, string, length);
 }
 
 // LL_GL_DEBUG=1: the shaders the driver refuses, with its message (a shader
@@ -1298,8 +1315,17 @@ extern "C" void __attribute__((cdecl)) wrap_glBufferSubDataARB(GLenum target, GL
 extern "C" void __attribute__((cdecl)) wrap_glShaderSourceARB(GLhandleARB shader, GLsizei count, const GLcharARB **string,
                                                               const GLint *length)
 {
-    if (glad_glShaderSourceARB)
-        glad_glShaderSourceARB(shader, count, string, length);
+    if (!glad_glShaderSourceARB)
+        return;
+    char *patched = shaderPatchedSource(count, (const GLchar *const *)string, length);
+    if (patched)
+    {
+        const GLcharARB *one = patched;
+        glad_glShaderSourceARB(shader, 1, &one, NULL);
+        free(patched);
+        return;
+    }
+    glad_glShaderSourceARB(shader, count, string, length);
 }
 
 extern "C" void __attribute__((cdecl)) wrap_glCompileShaderARB(GLhandleARB shader)
@@ -2815,6 +2841,8 @@ void *GLHooks_GetProcAddress(const char *procName)
         return (void *)&wrap_glTexParameterf;
     if (strcmp(procName, "glTexParameterfv") == 0)
         return (void *)&wrap_glTexParameterfv;
+    if (strcmp(procName, "glTexParameteriv") == 0)
+        return (void *)&wrap_glTexParameteriv;
     if (strcmp(procName, "glTrackMatrixNV") == 0)
         return (void *)&wrap_glTrackMatrixNV;
     if (strcmp(procName, "glTranslated") == 0)

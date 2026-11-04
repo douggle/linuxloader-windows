@@ -110,6 +110,31 @@ static char *hostStrrchr(const char *str, int value) { return const_cast<char *>
 static char *hostStrstr(const char *str, const char *substr) { return const_cast<char *>(strstr(str, substr)); }
 static char *hostStrpbrk(const char *str, const char *accept) { return const_cast<char *>(strpbrk(str, accept)); }
 
+// memcpy that reads its arguments once, before copying, as glibc's does.
+// msvcrt's reads them from the stack again partway through, and Big Buck HD
+// Wild's coroutines copy a saved stack back over the very arguments of the
+// memcpy doing it: the rest of the copy then went to a pointer taken from the
+// copied data, another task's saved stack.
+extern "C" void *__attribute__((naked)) gameMemcpy(void *dst, const void *src, size_t count)
+{
+    asm volatile("push %edi\n\t"
+                 "push %esi\n\t"
+                 "mov 12(%esp), %edi\n\t"
+                 "mov 16(%esp), %esi\n\t"
+                 "mov 20(%esp), %ecx\n\t"
+                 "mov %edi, %eax\n\t"
+                 "mov %ecx, %edx\n\t"
+                 "shr $2, %ecx\n\t"
+                 "cld\n\t"
+                 "rep movsl\n\t"
+                 "mov %edx, %ecx\n\t"
+                 "and $3, %ecx\n\t"
+                 "rep movsb\n\t"
+                 "pop %esi\n\t"
+                 "pop %edi\n\t"
+                 "ret\n\t");
+}
+
 SymbolResolver::SymbolResolver()
 {
     m_VTables["__gmon_start__"] = reinterpret_cast<void *>(__gmon_start__);
@@ -129,7 +154,7 @@ SymbolResolver::SymbolResolver()
     m_VTables["__strdup"] = reinterpret_cast<void *>(MemoryManager::customStrdup);
     m_VTables["strcoll"] = reinterpret_cast<void *>(MemoryManager::customStrcoll);
     m_VTables["strxfrm"] = reinterpret_cast<void *>(MemoryManager::customStrxfrm);
-    m_VTables["memcpy"] = reinterpret_cast<void *>(memcpy);
+    m_VTables["memcpy"] = reinterpret_cast<void *>(gameMemcpy);
     m_VTables["memset"] = reinterpret_cast<void *>(memset);
     m_VTables["memcmp"] = reinterpret_cast<void *>(memcmp);
     m_VTables["memchr"] = reinterpret_cast<void *>(hostMemchr);
@@ -288,8 +313,13 @@ void SymbolResolver::LoadNeededLibrary(const std::string &linuxName)
             return;
         }
     }
+    // Libraries the cabinet loaded from an absolute path (Raw Thrills games
+    // need /usr/lib/libcsv.so): look them up by name in the search paths, as
+    // the Linux launcher's patched copy does (rawthrills/rtLaunch.c).
+    if (!isMapped && !targetName.empty() && targetName[0] == '/')
+        targetName = targetName.substr(targetName.find_last_of('/') + 1);
 
-    bool tryAsDll = isMapped || (targetName.length() >= 4 && targetName.substr(targetName.length() - 4) == ".dll");
+    bool tryAsDll =isMapped || (targetName.length() >= 4 && targetName.substr(targetName.length() - 4) == ".dll");
 
     if (tryAsDll)
     {

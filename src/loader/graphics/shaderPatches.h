@@ -15,6 +15,9 @@ typedef struct
 extern "C"
 {
 #endif
+    // The game's shader source concatenated and patched for its family (a
+    // malloc'd string to free), or NULL when it has nothing to patch.
+    char *shaderPatchedSource(GLsizei count, const GLchar *const *string, const GLint *length);
     void gsEvoElfShaderPatcher();
     void gl_ProgramStringARB(int vertex_prg, int program_fmt, int program_len, char *program);
     void gl_ShaderSourceARB(uint32_t shaderObj, int count, const char **const string, const int *length);

@@ -286,6 +286,28 @@ int PthreadEmu::pthreadJoin(uint32_t thread, void **retval)
     return 0;
 }
 
+// pthread_join that gives up at abstime (CLOCK_REALTIME) with ETIMEDOUT.
+int PthreadEmu::pthreadTimedjoinNp(uint32_t thread, void **retval, const struct timespec *abstime)
+{
+    PthreadThreadInternal *thread_info = PthreadMapper::FindThread(thread);
+    if (!thread_info)
+        return LINUX_ESRCH;
+    if (thread_info->detached)
+        return LINUX_EINVAL;
+    if (GetCurrentThreadId() == thread_info->win_thread_id)
+        return LINUX_EDEADLK;
+
+    DWORD result = WaitForSingleObject(thread_info->handle, TimespecToMilliseconds(abstime));
+    if (result == WAIT_TIMEOUT)
+        return LINUX_ETIMEDOUT;
+    if (result != WAIT_OBJECT_0)
+        return LINUX_EINVAL;
+    if (retval)
+        *retval = thread_info->retval;
+    PthreadMapper::DestroyThread(thread);
+    return 0;
+}
+
 int PthreadEmu::pthreadDetach(uint32_t thread)
 {
     PthreadThreadInternal *thread_info = PthreadMapper::FindThread(thread);

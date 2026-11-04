@@ -93,6 +93,14 @@ namespace Alsa2SdlBridge
         MAP("snd_pcm_hw_params_set_buffer_size_near", shared_snd_pcm_hw_params_set_buffer_size_near);
         MAP("snd_pcm_hw_params_set_period_size_near", shared_snd_pcm_hw_params_set_period_size_near);
         MAP("snd_pcm_hw_params", shared_snd_pcm_hw_params);
+        MAP("snd_pcm_hw_params_copy", shared_snd_pcm_hw_params_copy);
+        MAP("snd_pcm_hw_params_set_periods_near", shared_snd_pcm_hw_params_set_periods_near);
+        MAP("snd_pcm_hw_params_get_buffer_size", shared_snd_pcm_hw_params_get_buffer_size);
+        MAP("snd_pcm_hw_params_get_channels", shared_snd_pcm_hw_params_get_channels);
+        MAP("snd_pcm_hw_params_get_period_size", shared_snd_pcm_hw_params_get_period_size);
+        MAP("snd_pcm_hw_params_get_periods", shared_snd_pcm_hw_params_get_periods);
+        MAP("snd_pcm_recover", shared_snd_pcm_recover);
+        MAP("snd_pcm_wait", shared_snd_pcm_wait);
 
         MAP("snd_pcm_sw_params_malloc", shared_snd_pcm_sw_params_malloc);
         MAP("snd_pcm_sw_params_free", shared_snd_pcm_sw_params_free);

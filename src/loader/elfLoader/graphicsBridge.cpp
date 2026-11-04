@@ -123,6 +123,7 @@ namespace GraphicsBridge
         MAP("XFreeColormap", bridgeXFreeColormap);
         MAP("XSetTransientForHint", bridgeXSetTransientForHint);
 
+        MAP("XDefaultScreen", bridgeXDefaultScreen);
         MAP("XDisplayWidth", bridgeXDisplayWidth);
         MAP("XDisplayHeight", bridgeXDisplayHeight);
         MAP("XDisplayWidthMM", bridgeXDisplayWidthMM);

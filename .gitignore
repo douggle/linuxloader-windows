@@ -20,3 +20,6 @@ docs/hasp-bypass.md
 docs/dongle-recording.md
 tools/dongle-recording/
 .tmp.driveupload/
+
+# Game images (copyrighted, and too big for git).
+*.squashfs

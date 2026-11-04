@@ -49,6 +49,7 @@ namespace LibcBridge
 {
     void initBridges();
     int bridgeSetjmp(int *env);
+    void bridgeLongjmp(int *env, int val);
 
     // STDIO interceptions
     int bridgePrintf(const char *format, ...);
@@ -189,6 +190,7 @@ namespace LibcBridge
     pid_t bridgeGetuid(void);
 
     void bridgeBzero(void *s, size_t n);
+    void bridgeQsort(void *base, size_t n, size_t size, int (*cmp)(const void *, const void *));
 } // namespace LibcBridge
 
 #endif

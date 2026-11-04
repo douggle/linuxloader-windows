@@ -136,6 +136,8 @@ namespace LibcBridge
         MAP("__fixunsdfdi", __fixunsdfdi);
         MAP("__fixunssfdi", __fixunssfdi);
         MAP("_setjmp", bridgeSetjmp);
+        MAP("longjmp", bridgeLongjmp);
+        MAP("_longjmp", bridgeLongjmp);
 
         // system
         MAP("system", bridgeSystem);
@@ -169,7 +171,7 @@ namespace LibcBridge
         MAP("sigemptyset", bridgeSigemptyset);
         MAP("sigaction", bridgeSigaction);
         MAP("alarm", bridgeStubSuccess);
-        MAP("qsort", qsort);
+        MAP("qsort", bridgeQsort);
         MAP("poll", bridgePoll);
         MAP("bsearch", bsearch);
         MAP("realpath", bridgeRealpath);
@@ -253,6 +255,54 @@ namespace LibcBridge
                      "mov %eax, 20(%edx)\n\t"
                      "xor %eax, %eax\n\t"
                      "ret\n\t");
+    }
+
+    // LL_JMP_DEBUG=1: a longjmp to a stack below its caller's, or with a frame
+    // pointer below its stack pointer, or on another thread than the first
+    // one seen (the frames it returns to overwritten, as a coroutine resumed
+    // at the wrong depth leaves them).
+    extern "C" void longjmpCheck(const int *env, uint32_t callerEsp, uint32_t caller)
+    {
+        static int enabled = -1;
+        if (enabled < 0)
+        {
+            const char *v = getenv("LL_JMP_DEBUG");
+            enabled = v && *v && strcmp(v, "0") != 0;
+        }
+        if (!enabled)
+            return;
+        static DWORD firstThread;
+        DWORD thread = GetCurrentThreadId();
+        if (!firstThread)
+            firstThread = thread;
+        uint32_t esp = (uint32_t)env[4], ebp = (uint32_t)env[3];
+        if (thread != firstThread || esp + 64 < callerEsp || ebp < esp)
+            log_warn("longjmp from %08x (thread %lu): env %p esp %08x ebp %08x pc %08x, caller's esp %08x", caller,
+                     (unsigned long)thread, env, esp, ebp, (uint32_t)env[5], callerEsp);
+    }
+
+    // Back to bridgeSetjmp's env, returning val there (1 for 0).
+    void __attribute__((naked)) bridgeLongjmp(int *env, int val)
+    {
+        asm volatile("mov 4(%esp), %edx\n\t"
+                     "lea 4(%esp), %eax\n\t"
+                     "push (%esp)\n\t"
+                     "push %eax\n\t"
+                     "push %edx\n\t"
+                     "call _longjmpCheck\n\t"
+                     "add $12, %esp\n\t"
+                     "mov 4(%esp), %edx\n\t"
+                     "mov 8(%esp), %eax\n\t"
+                     "test %eax, %eax\n\t"
+                     "jnz 1f\n\t"
+                     "inc %eax\n\t"
+                     "1:\n\t"
+                     "mov (%edx), %ebx\n\t"
+                     "mov 4(%edx), %esi\n\t"
+                     "mov 8(%edx), %edi\n\t"
+                     "mov 12(%edx), %ebp\n\t"
+                     "mov 16(%edx), %esp\n\t"
+                     "jmp *20(%edx)\n\t");
     }
 
     void bridgeAbort()
@@ -1377,6 +1427,64 @@ namespace LibcBridge
     {
         log_debug("Intercepted bzero");
         memset(s, 0, n);
+    }
+
+    // glibc's qsort is a merge sort: equal elements keep their order, and an
+    // array already in order is left as it is. msvcrt's quicksort swaps equal
+    // elements, and Big Buck HD Wild, which sorts its coroutine table by
+    // priority every frame while holding pointers into it, then resumed one
+    // task on another's stack.
+    static void mergeSort(char *base, char *tmp, size_t n, size_t size, int (*cmp)(const void *, const void *))
+    {
+        if (n < 2)
+            return;
+        size_t half = n / 2;
+        char *right = base + half * size;
+        mergeSort(base, tmp, half, size, cmp);
+        mergeSort(right, tmp, n - half, size, cmp);
+        if (cmp(right - size, right) <= 0)
+            return; // already in order: nothing moves
+        char *a = base, *aEnd = right, *b = right, *bEnd = base + n * size, *out = tmp;
+        while (a < aEnd && b < bEnd)
+        {
+            char *take = cmp(a, b) <= 0 ? a : b;
+            memcpy(out, take, size);
+            out += size;
+            if (take == a)
+                a += size;
+            else
+                b += size;
+        }
+        memcpy(out, a, aEnd - a);
+        out += aEnd - a;
+        memcpy(out, b, bEnd - b);
+        memcpy(base, tmp, n * size);
+    }
+
+    void bridgeQsort(void *base, size_t n, size_t size, int (*cmp)(const void *, const void *))
+    {
+        if (n < 2 || size == 0)
+            return;
+        char *tmp = (char *)malloc(n * size);
+        if (tmp)
+        {
+            mergeSort((char *)base, tmp, n, size, cmp);
+            free(tmp);
+            return;
+        }
+        // Out of memory: an insertion sort, as stable.
+        char *item = (char *)alloca(size);
+        for (size_t i = 1; i < n; i++)
+        {
+            size_t j = i;
+            memcpy(item, (char *)base + i * size, size);
+            while (j > 0 && cmp((char *)base + (j - 1) * size, item) > 0)
+            {
+                memcpy((char *)base + j * size, (char *)base + (j - 1) * size, size);
+                j--;
+            }
+            memcpy((char *)base + j * size, item, size);
+        }
     }
 
     int bridgeWmemcmp(const uint32_t *s1, const uint32_t *s2, size_t n)

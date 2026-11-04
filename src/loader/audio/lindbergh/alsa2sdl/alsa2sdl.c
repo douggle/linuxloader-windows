@@ -214,6 +214,58 @@ int shared_snd_pcm_hw_params_set_period_size_near(snd_pcm_t *pcm, snd_pcm_hw_par
     return 0;
 }
 
+// SDL 1.2's ALSA driver (Big Buck HD Wild): it reads its choices back.
+int shared_snd_pcm_hw_params_copy(snd_pcm_hw_params_t *dst, const snd_pcm_hw_params_t *src)
+{
+    if (dst && src)
+        *dst = *src;
+    return 0;
+}
+
+int shared_snd_pcm_hw_params_set_periods_near(snd_pcm_t *pcm, snd_pcm_hw_params_t *params, unsigned int *val, int *dir)
+{
+    if (params && val)
+    {
+        params->periods = *val;
+        params->buffer_size = params->period_size * *val;
+    }
+    if (dir)
+        *dir = 0;
+    return 0;
+}
+
+int shared_snd_pcm_hw_params_get_buffer_size(const snd_pcm_hw_params_t *params, snd_pcm_uframes_t *val)
+{
+    if (params && val)
+        *val = params->buffer_size;
+    return 0;
+}
+
+int shared_snd_pcm_hw_params_get_channels(const snd_pcm_hw_params_t *params, unsigned int *val)
+{
+    if (params && val)
+        *val = (unsigned int)params->channels;
+    return 0;
+}
+
+int shared_snd_pcm_hw_params_get_period_size(const snd_pcm_hw_params_t *params, snd_pcm_uframes_t *val, int *dir)
+{
+    if (params && val)
+        *val = params->period_size;
+    if (dir)
+        *dir = 0;
+    return 0;
+}
+
+int shared_snd_pcm_hw_params_get_periods(const snd_pcm_hw_params_t *params, unsigned int *val, int *dir)
+{
+    if (params && val)
+        *val = params->periods;
+    if (dir)
+        *dir = 0;
+    return 0;
+}
+
 int shared_snd_pcm_hw_params(snd_pcm_t *pcm, snd_pcm_hw_params_t *params)
 {
     if (!pcm || !params)
@@ -302,6 +354,23 @@ int shared_snd_pcm_prepare(snd_pcm_t *pcm)
         pcm->state = SND_PCM_STATE_PREPARED;
     }
     return 0;
+}
+
+// An underrun (-EPIPE) or suspend (-ESTRPIPE) is over once prepared again.
+int shared_snd_pcm_recover(snd_pcm_t *pcm, int err, int silent)
+{
+    (void)silent;
+    if (err == -32 || err == -86)
+        return shared_snd_pcm_prepare(pcm);
+    return err;
+}
+
+// Always ready: snd_pcm_writei waits for room itself.
+int shared_snd_pcm_wait(snd_pcm_t *pcm, int timeout)
+{
+    (void)pcm;
+    (void)timeout;
+    return 1;
 }
 
 int shared_snd_pcm_start(snd_pcm_t *pcm)

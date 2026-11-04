@@ -23,10 +23,8 @@
 #include "../config/config.h"
 #include "../patching/flowControl.h"
 #include "../log/log.h"
-#ifdef __linux__
 #include "../namco/namcoEs1.h"
 #include "../rawthrills/rawthrills.h"
-#endif
 #include "shaderWork/common.h"
 
 #include "shaderWork/abc.h"
@@ -326,31 +324,27 @@ void bridgeglDisable(GLenum cap)
     glad_glDisable(cap);
 }
 
-#ifdef __linux__
 // Shader sources the engines wrote for NVIDIA's compiler, which Mesa's
 // refuses: the family's fixes are applied in place, and the (concatenated)
-// source is passed on as a single string.
+// source is passed on as a single string. Linux and Windows alike (the
+// Windows glShaderSource wrappers, elfLoader/glHooks.cpp).
 // - Raw Thrills: the g5 bloom output demotion, and the g3 #version 1.20 with
 //   its sized gl_TexCoord (rtPatchShaderSource).
 // - Namco ES1: texture2DLod() (not in GLSL 1.20), and gl_TexCoord[] indexed
 //   by a variable (namcoEs1PatchShader).
-typedef void (*ShaderSourceFn)(GLuint, GLsizei, const GLchar *const *, const GLint *);
-
-// The sources concatenated, patched for the family, and handed to real.
-static void patchedShaderSource(ShaderSourceFn real, GLuint shader, GLsizei count, const GLchar *const *string,
-                                const GLint *length)
+char *shaderPatchedSource(GLsizei count, const GLchar *const *string, const GLint *length)
 {
     size_t total = 0;
     char *src, *out;
 
     if ((!isRawThrillsGame() && !isNamcoEs1Game()) || count <= 0)
-        return real(shader, count, string, length);
+        return NULL;
 
     for (GLsizei i = 0; i < count; i++)
         total += length && length[i] >= 0 ? (size_t)length[i] : strlen(string[i]);
     // Room for the patches' insertions.
     if (!(src = malloc(total + 256)))
-        return real(shader, count, string, length);
+        return NULL;
     out = src;
     for (GLsizei i = 0; i < count; i++)
     {
@@ -364,6 +358,19 @@ static void patchedShaderSource(ShaderSourceFn real, GLuint shader, GLsizei coun
         namcoEs1PatchShader(src);
     else
         rtPatchShaderSource(src);
+    return src;
+}
+
+#ifdef __linux__
+typedef void (*ShaderSourceFn)(GLuint, GLsizei, const GLchar *const *, const GLint *);
+
+// The sources concatenated, patched for the family, and handed to real.
+static void patchedShaderSource(ShaderSourceFn real, GLuint shader, GLsizei count, const GLchar *const *string,
+                                const GLint *length)
+{
+    char *src = shaderPatchedSource(count, string, length);
+    if (!src)
+        return real(shader, count, string, length);
 
     const GLchar *one = src;
     real(shader, 1, &one, NULL);

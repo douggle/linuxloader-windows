@@ -522,7 +522,11 @@ extern "C"
         if (strncmp(path, "/var/tmp", 8) == 0)
             path += 5;
 
-        if (path && (strstr(path, "/dev/") != NULL || strstr(path, "i2c/") != NULL || strstr(path, "ttyS") != NULL))
+        // Not /dev/dsp, which Windows has no emulation of (win32Devices.c):
+        // SDL 1.2's OSS driver, failing to open it, tries /dev/dsp1, dsp2, ...
+        // for as long as they exist, and hung Big Buck HD Wild's SDL_Init.
+        if (path && strncmp(path, "/dev/dsp", 8) != 0 &&
+            (strstr(path, "/dev/") != NULL || strstr(path, "i2c/") != NULL || strstr(path, "ttyS") != NULL))
         {
             log_debug("stat: Spoofing virtual device for %s", path);
 

@@ -24,6 +24,8 @@
 #include <io.h>
 #include <string>
 
+#include <glad/gl.h>
+
 #include "symbolResolver.hpp"
 #include "memoryManager.hpp"
 #include "rtLibcBridge.hpp"
@@ -560,6 +562,16 @@ extern "C"
             *end = (lwchar *)(s + (e - buf));
         return v;
     }
+    // Big Buck HD Wild.
+    static unsigned long rt_wcstoul(const lwchar *s, lwchar **end, int base)
+    {
+        char buf[128], *e;
+        narrowW(s, buf, sizeof(buf));
+        unsigned long v = strtoul(buf, &e, base);
+        if (end)
+            *end = (lwchar *)(s + (e - buf));
+        return v;
+    }
     static lwchar *rt_wcstok(lwchar *s, const lwchar *delim, lwchar **save)
     {
         auto isDelim = [&](lwchar c) {
@@ -912,10 +924,27 @@ extern "C"
         (void)inherit;
         return 0;
     }
-    // GLU from Windows' glu32.dll (stdcall there, cdecl for the game).
+    // On the driver: the level, then its mipmaps made by the GPU. Windows'
+    // glu32.dll is GLU 1.2, which knows no GL_BGRA and the other formats
+    // Linux's GLU takes, and left Big Buck HD Wild's animals with no texture:
+    // black silhouettes. glu32 is the fallback for a driver without
+    // glGenerateMipmap.
     static int rt_gluBuild2DMipmaps(unsigned target, int components, int w, int h, unsigned format, unsigned type,
                                     const void *data)
     {
+        if (glad_glTexImage2D && glad_glGenerateMipmap && w > 0 && h > 0)
+        {
+            while (glad_glGetError() != GL_NO_ERROR)
+                ;
+            glad_glTexImage2D(target, 0, components, w, h, 0, format, type, data);
+            glad_glGenerateMipmap(target);
+            GLenum error = glad_glGetError();
+            if (error == GL_NO_ERROR)
+                return 0;
+            log_warn("gluBuild2DMipmaps(%#x, %d, %dx%d, %#x, %#x): GL error %#x", target, components, w, h, format, type,
+                     error);
+            return (int)error;
+        }
         typedef int(__stdcall * Fn)(unsigned, int, int, int, unsigned, unsigned, const void *);
         static Fn fn;
         if (!fn)
@@ -924,6 +953,124 @@ extern "C"
             fn = glu ? (Fn)(void *)GetProcAddress(glu, "gluBuild2DMipmaps") : NULL;
         }
         return fn ? fn(target, components, w, h, format, type, data) : 100900; // GLU_INVALID_ENUM
+    }
+
+    // ------------------------------------------- Big Buck HD Wild's imports
+    static size_t rt_strnlen(const char *s, size_t n)
+    {
+        const char *end = (const char *)memchr(s, 0, n);
+        return end ? (size_t)(end - s) : n;
+    }
+    static lwchar *rt_wcsncat(lwchar *d, const lwchar *s, size_t n)
+    {
+        lwchar *r = d;
+        while (*d)
+            d++;
+        while (n-- && *s)
+            *d++ = *s++;
+        *d = 0;
+        return r;
+    }
+    static void rt_bcopy(const void *src, void *dst, size_t n) { memmove(dst, src, n); }
+    static long long rt_atoll(const char *s) { return _atoi64(s); }
+    static int rt_iswalpha(lwchar c) { return c <= 0xffff ? iswalpha((wint_t)c) : 0; }
+    static double rt_floor(double x) { return floor(x); }
+    static double rt_ceil(double x) { return ceil(x); }
+    static double rt_trunc(double x) { return trunc(x); }
+    static long rt_lrint(double x) { return lrint(x); }
+    // glibc's FP_NAN, FP_INFINITE, FP_ZERO, FP_SUBNORMAL, FP_NORMAL: 0 to 4.
+    static int rt_fpclassifyf(float x)
+    {
+        uint32_t bits;
+        memcpy(&bits, &x, sizeof(bits));
+        uint32_t exponent = bits >> 23 & 0xff, mantissa = bits & 0x7fffff;
+        if (exponent == 0xff)
+            return mantissa ? 0 : 1;
+        if (exponent == 0)
+            return mantissa ? 3 : 2;
+        return 4;
+    }
+
+    static void rt_tzset(void) { _tzset(); }
+    static int32_t rt_timegm(linux_tm *t)
+    {
+        struct tm w;
+        memcpy(&w, t, 9 * sizeof(int));
+        __time64_t r = _mkgmtime64(&w);
+        if (r != -1)
+            memcpy(t, &w, 9 * sizeof(int)); // normalised, as glibc does
+        return (int32_t)r;
+    }
+    static char *rt_ctime(const int32_t *t)
+    {
+        __time64_t tt = *t;
+        return _ctime64(&tt);
+    }
+
+    static int rt_swprintf(lwchar *s, size_t n, const lwchar *fmt, ...)
+    {
+        va_list ap;
+        va_start(ap, fmt);
+        int r = rt_vswprintf_l(s, n, fmt, ap);
+        va_end(ap);
+        return r;
+    }
+    // The loader's own vfprintf (its FILE handling), whatever flag asks.
+    static int rt_vfprintf_chk(void *fp, int flag, const char *fmt, va_list ap)
+    {
+        (void)flag;
+        typedef int (*Vfprintf)(void *, const char *, va_list);
+        static Vfprintf vfprintfBridge;
+        if (!vfprintfBridge)
+            vfprintfBridge = (Vfprintf)bridgeOf("vfprintf");
+        return vfprintfBridge ? vfprintfBridge(fp, fmt, ap) : vfprintf((FILE *)fp, fmt, ap);
+    }
+
+    // glibc's sigset_t: a bit per signal, signal 1 first.
+    static int rt_sigaddset(uint32_t *set, int sig)
+    {
+        if (!set || sig < 1 || sig > 64)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        set[(sig - 1) / 32] |= 1u << ((sig - 1) % 32);
+        return 0;
+    }
+    static int rt_pthread_setcanceltype(int type, int *oldtype)
+    {
+        (void)type;
+        if (oldtype)
+            *oldtype = 0; // PTHREAD_CANCEL_DEFERRED
+        return 0;
+    }
+
+    // glibc's i386 struct statvfs, filled from the current drive.
+    struct linux_statvfs
+    {
+        uint32_t f_bsize, f_frsize, f_blocks, f_bfree, f_bavail, f_files, f_ffree, f_favail, f_fsid;
+        int32_t unused;
+        uint32_t f_flag, f_namemax;
+        int32_t spare[6];
+    };
+    static int rt_statvfs(const char *path, linux_statvfs *buf)
+    {
+        (void)path;
+        ULARGE_INTEGER available, total, unused;
+        if (!buf || !GetDiskFreeSpaceExA(NULL, &available, &total, &unused))
+        {
+            errno = ENOENT;
+            return -1;
+        }
+        auto blocks = [](ULONGLONG bytes) { return (uint32_t)(bytes / 4096 > 0xffffffffULL ? 0xffffffffULL : bytes / 4096); };
+        memset(buf, 0, sizeof(*buf));
+        buf->f_bsize = buf->f_frsize = 4096;
+        buf->f_blocks = blocks(total.QuadPart);
+        buf->f_bfree = blocks(unused.QuadPart);
+        buf->f_bavail = blocks(available.QuadPart);
+        buf->f_files = buf->f_ffree = buf->f_favail = 1000000;
+        buf->f_namemax = 255;
+        return 0;
     }
 }
 
@@ -1026,6 +1173,34 @@ namespace RtLibcBridge
         MAP("__wcscpy_chk", rt_wcscpy_chk);
         MAP("wcstoll", rt_wcstoll);
         MAP("wcstoull", rt_wcstoull);
+        MAP("wcstoul", rt_wcstoul);
+
+        // Big Buck HD Wild.
+        MAP("strnlen", rt_strnlen);
+        MAP("wcsncat", rt_wcsncat);
+        MAP("bcopy", rt_bcopy);
+        MAP("atoll", rt_atoll);
+        MAP("iswalpha", rt_iswalpha);
+        MAP("floor", rt_floor);
+        MAP("ceil", rt_ceil);
+        MAP("trunc", rt_trunc);
+        MAP("lrint", rt_lrint);
+        MAP("__fpclassifyf", rt_fpclassifyf);
+        MAP("tzset", rt_tzset);
+        MAP("timegm", rt_timegm);
+        MAP("ctime", rt_ctime);
+        MAP("swprintf", rt_swprintf);
+        MAP("__isoc99_swscanf", rt_swscanf);
+        MAP("__vfprintf_chk", rt_vfprintf_chk);
+        MAP("sigaddset", rt_sigaddset);
+        MAP("pthread_setcanceltype", rt_pthread_setcanceltype);
+        MAP("statvfs", rt_statvfs);
+        MAP("setrlimit", rt_ret0);
+        MAP("geteuid", rt_ret0);
+        MAP("ptrace", rt_ret0);
+        MAP("dl_iterate_phdr", rt_ret0);
+        MAP("symlink", rt_retm1);
+        MAP("getnetbyname", rt_retnull);
         MAP("wcstok", rt_wcstok);
         MAP("__swprintf_chk", rt_swprintf_chk);
         MAP("fwprintf", rt_fwprintf);

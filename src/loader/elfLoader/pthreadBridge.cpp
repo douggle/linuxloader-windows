@@ -71,6 +71,7 @@ namespace PthreadBridge
         // Thread functions
         MAP("pthread_create", PthreadEmu::pthreadCreate);
         MAP("pthread_join", PthreadEmu::pthreadJoin);
+        MAP("pthread_timedjoin_np", PthreadEmu::pthreadTimedjoinNp);
         MAP("pthread_detach", PthreadEmu::pthreadDetach);
         MAP("pthread_exit", PthreadEmu::pthreadExit);
         MAP("pthread_self", PthreadEmu::pthreadSelf);

@@ -129,6 +129,12 @@ typedef struct RtGame
     uint32_t crc32;    // loader-side id (partial CRC of the code segment)
     uint32_t fileCrc32; // CRC32 of the dumped ELF file, as the launcher sees it (0: run as is)
     uint32_t altFileCrc32; // another copy of the same ELF (a resolution patch), run the same way (0: none)
+    // The partial CRC of the untouched ELF, when crc32 is the patched copy's:
+    // the Windows loader runs no patched copy and sees this one (0: none).
+    uint32_t unpatchedCrc32;
+    // SDL 1.2 linked into the game (its symbols list SDL_Init and the other
+    // entry points it calls): on Windows they go to sdl12-compat (rtSdl.c).
+    int staticSdl;
 
     // Rockey boot envelope: XOR-encrypted code beginning at the real entry.
     // Decrypted in the launcher's cached copy; the original remains intact.
@@ -484,6 +490,9 @@ void rtMgpFfbInstall(void) __attribute__((weak));
 
 const RtGame *rtGetGame(uint32_t crc32);
 const RtGame *rtGetGameByFileCrc(uint32_t fileCrc32);
+// The loader-side id of a game whose untouched ELF has this partial CRC (its
+// unpatchedCrc32), else the CRC itself.
+uint32_t rtPatchedCrc(uint32_t crc32);
 
 // Launcher: run a patched copy of a Raw Thrills dump (see rtLaunch.c).
 // configPath: the loader's configuration, for the games taking their video

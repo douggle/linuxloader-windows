@@ -26,6 +26,12 @@ extern "C"
     int shared_snd_pcm_hw_params_set_buffer_size(snd_pcm_t *pcm, snd_pcm_hw_params_t *params, snd_pcm_uframes_t val);
     int shared_snd_pcm_hw_params_set_buffer_size_near(snd_pcm_t *pcm, snd_pcm_hw_params_t *params, unsigned long *val);
     int shared_snd_pcm_hw_params_set_period_size_near(snd_pcm_t *pcm, snd_pcm_hw_params_t *params, unsigned long *val, int *dir);
+    int shared_snd_pcm_hw_params_copy(snd_pcm_hw_params_t *dst, const snd_pcm_hw_params_t *src);
+    int shared_snd_pcm_hw_params_set_periods_near(snd_pcm_t *pcm, snd_pcm_hw_params_t *params, unsigned int *val, int *dir);
+    int shared_snd_pcm_hw_params_get_buffer_size(const snd_pcm_hw_params_t *params, snd_pcm_uframes_t *val);
+    int shared_snd_pcm_hw_params_get_channels(const snd_pcm_hw_params_t *params, unsigned int *val);
+    int shared_snd_pcm_hw_params_get_period_size(const snd_pcm_hw_params_t *params, snd_pcm_uframes_t *val, int *dir);
+    int shared_snd_pcm_hw_params_get_periods(const snd_pcm_hw_params_t *params, unsigned int *val, int *dir);
     int shared_snd_pcm_hw_params(snd_pcm_t *pcm, snd_pcm_hw_params_t *params);
 
     int shared_snd_pcm_sw_params_malloc(snd_pcm_sw_params_t **ptr);
@@ -37,6 +43,8 @@ extern "C"
     int shared_snd_pcm_sw_params(snd_pcm_t *pcm, snd_pcm_sw_params_t *params);
 
     int shared_snd_pcm_prepare(snd_pcm_t *pcm);
+    int shared_snd_pcm_recover(snd_pcm_t *pcm, int err, int silent);
+    int shared_snd_pcm_wait(snd_pcm_t *pcm, int timeout);
     int shared_snd_pcm_start(snd_pcm_t *pcm);
     int shared_snd_pcm_drop(snd_pcm_t *pcm);
     int shared_snd_pcm_resume(snd_pcm_t *pcm);

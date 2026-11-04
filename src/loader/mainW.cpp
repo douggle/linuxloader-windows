@@ -36,6 +36,10 @@
 #include "input/sdlInput.h"
 #include "mainShared.h"
 #include "selfDebug.h"
+extern "C"
+{
+#include "rawthrills/rtGame.h"
+}
 
 std::string g_absoluteElfPath;
 uint32_t partialElfCrc = 0;
@@ -672,7 +676,7 @@ int main(int argc, char *argv[], char *envp[])
 
     uint8_t *baseAddr = (uint8_t *)loader.GetBaseAddress();
     if (baseAddr)
-        partialElfCrc = getCrc32Mem(baseAddr + 10, 0x4000);
+        partialElfCrc = rtPatchedCrc(getCrc32Mem(baseAddr + 10, 0x4000));
 
     // The configuration paths were found overwritten by the time the game was
     // loaded: point them at the loader's copies again.
@@ -707,6 +711,22 @@ int main(int argc, char *argv[], char *envp[])
     char *final_argv_arr[10];
 
     final_argv_arr[final_argc++] = elfPath;
+
+    // Raw Thrills games told their render size on the command line, as the
+    // Linux launcher does (rawthrills/rtLaunch.c): else they draw at their
+    // cabinet's size in a corner of the window.
+    static char sizeArgument[64];
+    const RtGame *rtGame = rtGetGame(partialElfCrc);
+    if (rtGame && rtGame->sizeArgument)
+    {
+        int width = rtGame->frameTurn ? rtGame->frameTurnWidth : getConfig()->width;
+        int height = rtGame->frameTurn ? rtGame->frameTurnHeight : getConfig()->height;
+        if (width > 0 && height > 0)
+        {
+            snprintf(sizeArgument, sizeof(sizeArgument), rtGame->sizeArgument, width, height);
+            final_argv_arr[final_argc++] = sizeArgument;
+        }
+    }
 
     if (strlen(elfArgs) > 0)
     {

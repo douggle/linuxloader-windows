@@ -23,6 +23,10 @@
 #include "../graphics/frameScale.h"
 #include "../graphics/gpuVendor.h"
 #include "../log/log.h"
+#if defined(__linux__)
+#include <X11/Xatom.h>
+#include <X11/Xlib.h>
+#endif
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -103,6 +107,42 @@ void *rtRealDlsym(void *handle, const char *name)
 // A window SDL was not asked to make resizable is pinned at its size, with
 // equal minimum and maximum size hints (The Walking Dead): drop them, so the
 // window can be resized and the frame scales with it (see frameScale.h).
+#if defined(__linux__)
+// [Display] FULLSCREEN: SDL 1.2's own fullscreen (an override-redirect
+// window) is ignored under XWayland, which leaves a 1920x1080 frame in a
+// window shrunk under the title bar and panel. Ask the window manager
+// instead: _NET_WM_STATE before the window is mapped, a client message to the
+// root window once it is.
+static void wmFullscreen(Display *display, Window window)
+{
+    static Atom (*internAtom)(Display *, const char *, Bool);
+    static int (*changeProperty)(Display *, Window, Atom, Atom, int, int, const unsigned char *, int);
+    static Status (*sendEvent)(Display *, Window, Bool, long, XEvent *);
+    if (!internAtom)
+    {
+        internAtom = dlsym(RTLD_NEXT, "XInternAtom");
+        changeProperty = dlsym(RTLD_NEXT, "XChangeProperty");
+        sendEvent = dlsym(RTLD_NEXT, "XSendEvent");
+    }
+    if (!internAtom || !changeProperty || !sendEvent)
+        return;
+
+    Atom state = internAtom(display, "_NET_WM_STATE", False);
+    Atom fullscreen = internAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
+    changeProperty(display, window, state, XA_ATOM, 32, PropModeReplace, (const unsigned char *)&fullscreen, 1);
+
+    XEvent event = {0};
+    event.xclient.type = ClientMessage;
+    event.xclient.window = window;
+    event.xclient.message_type = state;
+    event.xclient.format = 32;
+    event.xclient.data.l[0] = 1; // _NET_WM_STATE_ADD
+    event.xclient.data.l[1] = (long)fullscreen;
+    event.xclient.data.l[3] = 1; // a normal application
+    sendEvent(display, DefaultRootWindow(display), False, SubstructureRedirectMask | SubstructureNotifyMask, &event);
+}
+#endif
+
 static int setWMNormalHints(void *display, unsigned long window, long *hints)
 {
     static int (*real)(void *, unsigned long, long *);
@@ -110,7 +150,12 @@ static int setWMNormalHints(void *display, unsigned long window, long *hints)
         real = dlsym(RTLD_NEXT, "XSetWMNormalHints");
     if (hints)
         hints[0] &= ~((1L << 4) | (1L << 5));   // XSizeHints.flags: PMinSize, PMaxSize
-    return real ? real(display, window, hints) : 0;
+    int ret = real ? real(display, window, hints) : 0;
+#if defined(__linux__)
+    if (getConfig()->fullscreen)
+        wmFullscreen(display, window);
+#endif
+    return ret;
 }
 
 // Functions the games get in place of the real ones, wherever they look

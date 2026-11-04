@@ -812,6 +812,25 @@ static const RtSymbol bbhdSymbols[] = {
     // attaches.  Stubbed to 1 the fork never happens.
     {"TracerGuard", 0x084338e6},
     {"SDL_SetVideoMode", 0x08288c60},
+    // The rest of the SDL 1.2.14 entry points the game calls (the version is
+    // the one it hands SDL_GetWMInfo), sent to sdl12-compat on Windows
+    // (staticSdl).  Each matched to SDL's source by its body: SDL_WasInit
+    // masks with 0xffff, SDL_Quit is QuitSubSystem(0xffff), SDL_PollEvent
+    // peeks one SDL_GETEVENT, SDL_GL_SetAttribute rejects attr > 16, ...
+    {"SDL_WasInit", 0x0827b050},
+    {"SDL_Quit", 0x0827b140},
+    {"SDL_Init", 0x0827b2a0},
+    {"SDL_GetError", 0x0827b4d0},
+    {"SDL_PollEvent", 0x08280530},
+    {"SDL_EnableKeyRepeat", 0x08280b10},
+    {"SDL_ShowCursor", 0x082845c0},
+    {"SDL_FreeSurface", 0x08285d70},
+    {"SDL_GetVideoSurface", 0x08286f30},
+    {"SDL_GetVideoInfo", 0x08286f50},
+    {"SDL_GetWMInfo", 0x08287790},
+    {"SDL_WM_SetCaption", 0x08287bf0},
+    {"SDL_GL_SwapBuffers", 0x08287cb0},
+    {"SDL_GL_SetAttribute", 0x08287d40},
     // The g5 io layer (io.c), in its source order: found by the constants
     // of their Jurassic Park counterparts (whose dump exports them), such as
     // the accessors' id ranges (digital: <= 0x142, then 0x146 on; analog:
@@ -1604,6 +1623,9 @@ static const RtGame rtGames[] = {
         // The game links libcsv by absolute path (/usr/lib/libcsv.so), which
         // no library path can redirect, so it runs from a patched copy.
         .fileCrc32 = 0xa982eef0,
+        // The Windows loader resolves the libcsv path itself and runs the
+        // untouched file (see config.h).
+        .unpatchedCrc32 = 0x56adc4aa,
         .envelopeSelfSlot = -1,
         .symbols = bbhdSymbols,
         // Both read off the binary.  hasp_login is called at 0x8267ad8 with
@@ -1620,6 +1642,8 @@ static const RtGame rtGames[] = {
         // under /pm/g5/bbhd).
         .rootPath = "/pm",
         .stubs = bbhdStubs,
+        // SDL 1.2 is linked in, and its X11 driver has no Windows answer.
+        .staticSdl = 1,
         // "push %ebp; mov %esp,%ebp; push %edi; push %esi; push %ebx"
         .videoModeSymbol = "SDL_SetVideoMode",
         .videoModePrologue = 6,
@@ -2235,6 +2259,14 @@ const RtGame *rtGetGame(uint32_t crc32)
         if (rtGames[i].crc32 == crc32)
             return &rtGames[i];
     return NULL;
+}
+
+uint32_t rtPatchedCrc(uint32_t crc32)
+{
+    for (size_t i = 0; i < sizeof(rtGames) / sizeof(rtGames[0]); i++)
+        if (rtGames[i].unpatchedCrc32 && rtGames[i].unpatchedCrc32 == crc32)
+            return rtGames[i].crc32;
+    return crc32;
 }
 
 const RtGame *rtGetGameByFileCrc(uint32_t fileCrc32)

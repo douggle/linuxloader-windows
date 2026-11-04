@@ -5,9 +5,9 @@
 // SSE values there with aligned stores (movaps), while Windows only keeps
 // 4-byte alignment. sdl2-compat's SDL2Compat_ApplyQuirks, run as a library
 // constructor, faulted on its first such store. These realign the stack for
-// the call and put it back after.
+// the call and put it back after. C and C++ alike (rawthrills/rtSdl.c).
 
-#include <cstdint>
+#include <stdint.h>
 
 // fn(arg), on a 16-byte aligned stack.
 static inline void *callLinuxAligned(void *(*fn)(void *), void *arg)

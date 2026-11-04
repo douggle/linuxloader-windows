@@ -137,6 +137,12 @@ int bridgeXGetErrorText(Display *dpy, int code, char *buffer, int length)
     return 0;
 }
 
+int bridgeXDefaultScreen(void *dpy)
+{
+    (void)dpy;
+    return 0;
+}
+
 int bridgeXDisplayWidth(void *dpy, int screen_number)
 {
     return getConfig()->width;

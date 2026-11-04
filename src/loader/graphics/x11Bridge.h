@@ -27,6 +27,7 @@ extern "C" {
     void bridgeXSetErrorHandler(void *handler);
     int bridgeXGetErrorText(Display *dpy, int code, char *buffer, int length);
 
+    int bridgeXDefaultScreen(void *dpy);
     int bridgeXDisplayWidth(void *dpy, int screen_number);
     int bridgeXDisplayHeight(void *dpy, int screen_number);
     int bridgeXDisplayWidthMM(void *dpy, int screen_number);

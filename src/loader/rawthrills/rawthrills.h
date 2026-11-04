@@ -80,5 +80,10 @@ void rtGlDebugStart(void);
 void rtGlxSwapBuffers(void *display, unsigned long drawable);
 void *rtRealDlsym(void *handle, const char *name);
 void rtInstallVideo(const RtGame *game);
+// Windows, staticSdl games: the game's SDL 1.2 entry points sent to
+// sdl12-compat (rtSdl.c), and the sdl12-compat function one of them now
+// reaches (NULL when not redirected), for the hooks that call through.
+void rtInstallStaticSdl(const RtGame *game);
+void *rtStaticSdlTarget(const char *name);
 
 #endif // RAWTHRILLS_H
