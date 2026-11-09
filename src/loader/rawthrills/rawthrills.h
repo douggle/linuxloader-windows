@@ -32,6 +32,9 @@ void *rtSymbol(const char *name);
 // Size of an exported game function (its dynamic symbol's), 0 if unknown.
 uint32_t rtSymbolSize(const char *name);
 int rtDetour(const char *name, void *replacement);
+// Like rtDetour, but a missing target is expected: games only carry a subset
+// of the dongle/IO hooks, so a miss is logged at debug level, not as a warning.
+int rtDetourOptional(const char *name, void *replacement);
 void rtDetourAddress(uint32_t address, void *replacement);
 void *rtTrampoline(const char *name, size_t prologueLength);
 int rtFixImports(const RtGame *game);

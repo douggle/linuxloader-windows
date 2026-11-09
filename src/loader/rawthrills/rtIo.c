@@ -60,16 +60,16 @@ void rtInstallIo(const RtGame *game)
         rtDetour(stub->name, stub->value ? (void *)retOne : (void *)retZero);
     if (game->install)
         game->install(game);
-    rtDetour("pmrt_usb_open", retOne);
-    rtDetour("pmrt_usb_interrupt_read", retZero);
-    rtDetour("pmrt_usb_interrupt_write", retZero);
-    rtDetour("pmrt_usb_control_xfr", retZero);
-    rtDetour("io_usbdev_init", retZero);
-    rtDetour("read_thread_func", retZero);
-    rtDetour("parse_in_report", retZero);
-    rtDetour("RIO_FileLog", retZero);
-    rtDetour("_Z30cpp_gyrogun_update_rt_wirelessi", retZero);
-    rtDetour("xicoCardThread", retZero);
+    rtDetourOptional("pmrt_usb_open", retOne);
+    rtDetourOptional("pmrt_usb_interrupt_read", retZero);
+    rtDetourOptional("pmrt_usb_interrupt_write", retZero);
+    rtDetourOptional("pmrt_usb_control_xfr", retZero);
+    rtDetourOptional("io_usbdev_init", retZero);
+    rtDetourOptional("read_thread_func", retZero);
+    rtDetourOptional("parse_in_report", retZero);
+    rtDetourOptional("RIO_FileLog", retZero);
+    rtDetourOptional("_Z30cpp_gyrogun_update_rt_wirelessi", retZero);
+    rtDetourOptional("xicoCardThread", retZero);
 }
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ static uint32_t haspFeature;
 static uint32_t haspMemoryFileId;
 static char answersDir[PATH_MAX];
 static uint32_t answerKeySize = ANSWER_KEY_SIZE;
+static const RtAnswer *builtinAnswers;
 static uint8_t memory[MEMORY_SIZE];
 static int memoryLoaded;
 static char memorySavedPath[PATH_MAX];
@@ -165,8 +166,8 @@ static void standInCrypt(uint8_t *buffer, uint32_t length)
 }
 static int haspCrypt(uint32_t handle, uint8_t *buffer, uint32_t length)
 {
+    char hexkey[2 * MAX_ANSWER_KEY_SIZE + 1];
     char path[PATH_MAX];
-    int n = snprintf(path, sizeof(path), "%s/", answersDir);
     FILE *f;
 
     (void)handle;
@@ -181,39 +182,46 @@ static int haspCrypt(uint32_t handle, uint8_t *buffer, uint32_t length)
     }
     if (length < ANSWER_KEY_SIZE)
         return HASP_TOO_SHORT;
-    // No answers recorded for this game: the cartridge has no encrypted
-    // data, and the stand-in is all the challenge/response needs.
-    if (!answersDir[0])
-    {
-        standInCrypt(buffer, length);
-        return HASP_STATUS_OK;
-    }
-    // Shorter than the recorded answers' names: never recorded.
+    // Shorter than the answers' names: never recorded, a self-test stand-in.
     if (length < answerKeySize)
     {
         standInCrypt(buffer, length);
         return HASP_STATUS_OK;
     }
-    for (uint32_t i = 0; i < answerKeySize && n + 2 < (int)sizeof(path); i++)
-        n += snprintf(path + n, sizeof(path) - n, "%02x", buffer[i]);
-    if (!(f = fopen(path, "rb")))
+    // The answer's name: the first answerKeySize input bytes in hex.
+    for (uint32_t i = 0; i < answerKeySize; i++)
+        snprintf(hexkey + 2 * i, 3, "%02x", buffer[i]);
+
+    // A recorded answer file (TeknoParrot's hasp folder) wins.
+    if (answersDir[0] && (f = fopen((snprintf(path, sizeof(path), "%s/%s", answersDir, hexkey), path), "rb")))
     {
-        log_warn("Raw Thrills: no recorded dongle answer %s, using a stand-in", path);
-        standInCrypt(buffer, length);
+        uint8_t *answer = malloc(length);
+        size_t got = answer ? fread(answer, 1, length, f) : 0;
+        int extra = fgetc(f) != EOF;
+        fclose(f);
+        if (got != length || extra)
+        {
+            log_warn("Raw Thrills: recorded dongle answer %s is not %u bytes", path, length);
+            free(answer);
+            return HASP_HASP_NOT_FOUND;
+        }
+        memcpy(buffer, answer, length);
+        free(answer);
         return HASP_STATUS_OK;
     }
-    uint8_t *answer = malloc(length);
-    size_t got = answer ? fread(answer, 1, length, f) : 0;
-    int extra = fgetc(f) != EOF;
-    fclose(f);
-    if (got != length || extra)
-    {
-        log_warn("Raw Thrills: recorded dongle answer %s is not %u bytes", path, length);
-        free(answer);
-        return HASP_HASP_NOT_FOUND;
-    }
-    memcpy(buffer, answer, length);
-    free(answer);
+    // Else an answer compiled into the loader: the game's data decrypts with
+    // no hasp/ folder at all.
+    for (const RtAnswer *a = builtinAnswers; a && a->key; a++)
+        if (a->len == length && !strcmp(a->key, hexkey))
+        {
+            memcpy(buffer, a->data, length);
+            return HASP_STATUS_OK;
+        }
+    // Else a stand-in: the dongle self-test (a buffer that only has to come
+    // back unchanged), or a game with no encrypted data.
+    if (answersDir[0])
+        log_warn("Raw Thrills: no recorded dongle answer %s/%s, using a stand-in", answersDir, hexkey);
+    standInCrypt(buffer, length);
     return HASP_STATUS_OK;
 }
 
@@ -251,6 +259,7 @@ void rtInstallDongle(const RtGame *game)
 {
     haspFeature = game->haspFeature;
     haspMemoryFileId = game->haspMemoryFileId;
+    builtinAnswers = game->builtinAnswers;
     if (game->haspAnswers)
         loadAnswers(game->haspAnswers, game->haspAnswerKeySize);
     loadMemory(game);
@@ -259,7 +268,7 @@ void rtInstallDongle(const RtGame *game)
     rtDetour("hasp_read", haspRead);
     rtDetour("hasp_write", haspWrite);
     rtDetour("hasp_get_sessioninfo", haspGetSessionInfo);
-    rtDetour("hasp_free", haspFree);
+    rtDetourOptional("hasp_free", haspFree);
     // hasp_encrypt/decrypt always: with recorded answers they replay them,
     // without they answer with a stand-in. Left to the game's own library
     // they would look for the USB dongle and fail the whole login.
@@ -271,9 +280,9 @@ void rtInstallDongle(const RtGame *game)
         rtDetour("DongleEncrypt", dongleCrypt);
         rtDetour("DongleDecrypt", dongleCrypt);
     }
-    rtDetour("DongleWriteLoop", dongleWriteLoop);
-    rtDetour("DongleNoise", haspOk);
-    rtDetour("DongleWriteHLFeature", haspOk);
+    rtDetourOptional("DongleWriteLoop", dongleWriteLoop);
+    rtDetourOptional("DongleNoise", haspOk);
+    rtDetourOptional("DongleWriteHLFeature", haspOk);
     if (game->haspReadPatch)
         rtDetourAddress(game->haspReadPatch, haspRead);
     if (game->haspWritePatch)

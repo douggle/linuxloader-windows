@@ -248,6 +248,68 @@ static int translateOpenMode(int mode)
 #endif
 
 #ifdef _WIN32
+// /dev/urandom, /dev/random and /dev/srandom, which Windows has none of: Big
+// Buck HD Wild's linked-in OpenSSL seeds its generator in RAND_poll from them
+// (open, fstat, poll, read). Without a seed its key operations fail, and with
+// them NetworkInit and the start-up after it, so GameDataInit never runs: the
+// adventure packs are never added and their fur settings never load, and the
+// animals draw black. A descriptor on NUL (fstat works on it) whose reads are
+// the system's random bytes (RtlGenRandom), which poll() reports readable
+// (libcBridge.cpp).
+#define RANDOM_FDS 8
+static int randomFds[RANDOM_FDS] = {-1, -1, -1, -1, -1, -1, -1, -1};
+
+static int randomIsPath(const char *pathname)
+{
+    return pathname && (!strcmp(pathname, "/dev/urandom") || !strcmp(pathname, "/dev/random") ||
+                        !strcmp(pathname, "/dev/srandom"));
+}
+
+int randomIsFd(int fd)
+{
+    for (int i = 0; fd >= 0 && i < RANDOM_FDS; i++)
+        if (randomFds[i] == fd)
+            return 1;
+    return 0;
+}
+
+static int randomOpen(void)
+{
+    int fd = _open("NUL", _O_RDONLY | _O_BINARY);
+    for (int i = 0; fd >= 0 && i < RANDOM_FDS; i++)
+        if (randomFds[i] < 0)
+        {
+            randomFds[i] = fd;
+            return fd;
+        }
+    if (fd >= 0)
+        _close(fd);
+    errno = EMFILE;
+    return -1;
+}
+
+static ssize_t randomRead(void *buf, size_t count)
+{
+    static BOOLEAN(WINAPI * genRandom)(PVOID, ULONG);
+    if (!genRandom)
+        *(void **)&genRandom = (void *)GetProcAddress(LoadLibraryA("advapi32.dll"), "SystemFunction036");
+    if (!genRandom || !genRandom(buf, (ULONG)count))
+    {
+        errno = EIO;
+        return -1;
+    }
+    return (ssize_t)count;
+}
+
+static void randomClose(int fd)
+{
+    for (int i = 0; i < RANDOM_FDS; i++)
+        if (randomFds[i] == fd)
+            randomFds[i] = -1;
+}
+#endif
+
+#ifdef _WIN32
 // LL_FILE_DEBUG=1: the files the game asks for and does not get, each once -
 // a texture or sound that silently goes missing.
 static void fileDebugMiss(const char *call, const char *path)
@@ -403,6 +465,10 @@ int sharedOpen(const char *pathname, int flags, ...)
     // The cameras (/dev/videoN), emulated (common/webcamWin32.c).
     if (webcamIsPath(pathname))
         return webcamOpen(pathname, flags, mode, NULL);
+
+    // /dev/urandom and friends: a seed source for the games' OpenSSL.
+    if (randomIsPath(pathname))
+        return randomOpen();
 
     // The cabinet's paths, and the Raw Thrills operator settings (see
     // rtSettings.c: coins instead of the dumps' free play), as on Linux.
@@ -861,6 +927,7 @@ int sharedClose(int fd)
 #ifdef _WIN32
     if (webcamIsFd(fd))
         webcamClose(fd);
+    randomClose(fd);
 #endif
 
     for (size_t i = 0; i < (sizeof hooks / sizeof hooks[0]); i++)
@@ -946,6 +1013,12 @@ ssize_t sharedRead(int fd, void *buf, size_t count)
         fileRead[CPUINFO] = pos + (int)bytes;
         return (ssize_t)bytes;
     }
+
+#ifdef _WIN32
+    // /dev/urandom and friends: the system's random bytes, OpenSSL's seed.
+    if (randomIsFd(fd))
+        return randomRead(buf, count);
+#endif
 
 #ifdef __linux__
     static ssize_t (*_read)(int fd, void *buf, size_t count) = NULL;

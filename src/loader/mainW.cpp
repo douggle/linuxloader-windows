@@ -12,6 +12,7 @@
 
 #include "glad/gl.h"
 #include "elfLoader/alsa2sdlBridge.hpp"
+#include "elfLoader/pulse2sdlBridge.hpp"
 #include "elfLoader/segaapiBridge.hpp"
 #include "elfLoader/gccBridge.hpp"
 #include "elfLoader/ipcBridge.hpp"
@@ -565,6 +566,7 @@ void initBridges()
     IpcBridge::initBridges();
     SegaApiBridge::initBridges();
     Alsa2SdlBridge::initBridges();
+    Pulse2SdlBridge::initBridges();
     RegexBridge::initBridges();
     MathBridge::initBridges();
     // Last: only names the bridges above leave unanswered.

@@ -58,6 +58,11 @@ void sharedRewind(FILE *stream);
 int sharedIoctl(int fd, unsigned long int request, ...);
 int sharedSelect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
 
+#ifdef _WIN32
+// A descriptor of the emulated /dev/urandom (filesystemShared.c).
+int randomIsFd(int fd);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

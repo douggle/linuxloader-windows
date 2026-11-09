@@ -228,6 +228,7 @@ int pthread_join(pthread_t thread, void **ret)
 
 #define BLOOM_OUTPUT "out vec4 out_Bloom;"
 #define GLSL_120 "#version 120\n"
+#define GLSL_130 "#version 130\n"
 #define TEXCOORD_SIZED "varying vec4 gl_TexCoord[gl_MaxTextureCoords];\n"
 
 // gl_TexCoord[] indexed by something else than a number.
@@ -333,7 +334,20 @@ void rtPatchShaderSource(char *src)
         memset(decl, ' ', 4); // "out " -> a plain global
     if (!strstr(src, "#version"))
     {
-        const char *prefix = texCoordIndexed(src) ? GLSL_120 TEXCOORD_SIZED : GLSL_120;
+        // g5-engine shaders use GLSL 1.30 features -- in/out interface
+        // variables and user-defined fragment outputs (out_Color/out_Bloom) --
+        // which #version 120 forbids, so forcing 120 on them makes the driver
+        // draw them black (the furred animals became silhouettes). Give those
+        // 1.30, plus GL_ARB_gpu_shader5 for a sampler array (the injection
+        // above only runs on shaders that already carry a #version). g3 shaders
+        // (gl_TexCoord, legacy outputs) still take 120.
+        int modern = strstr(src, "out_Color") || strstr(src, "out_Bloom") ||
+                     strstr(src, "\nin ") || strstr(src, "\nout ");
+        const char *prefix;
+        if (modern)
+            prefix = samplerArray(src) ? GLSL_130 GPU_SHADER5 : GLSL_130;
+        else
+            prefix = texCoordIndexed(src) ? GLSL_120 TEXCOORD_SIZED : GLSL_120;
         size_t n = strlen(prefix);
         memmove(src + n, src, strlen(src) + 1);
         memcpy(src, prefix, n);

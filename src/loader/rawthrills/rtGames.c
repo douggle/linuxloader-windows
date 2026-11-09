@@ -13,6 +13,10 @@
 #include "spaceinvadersfrenzy/sifSymbols.h"
 #include "worldslargestpacman/wlpImports.h"
 
+// Big Buck HD Wild's dongle answers, compiled in so its data decrypts with no
+// hasp/ folder (see .builtinAnswers below and tools/decrypt_bbhd_conf.py).
+#include "bbhdAnswers.inc"
+
 // SDL 1.2 key codes (engine input ids of the keyboard).
 enum
 {
@@ -1638,6 +1642,9 @@ static const RtGame rtGames[] = {
         // Recorded answers of its four dongle calls at startup: the secrets
         // its file keys derive from, and the efilemaps' AES key and IV.
         .haspAnswers = "hasp",
+        // The four answers (two salts, plus the efilemap key/IV) compiled in,
+        // so the game decrypts its conf data even without the hasp/ folder.
+        .builtinAnswers = bbhdAnswers,
         // The cabinet mounts the game at /pm (utils/go.sh, and the data paths
         // under /pm/g5/bbhd).
         .rootPath = "/pm",

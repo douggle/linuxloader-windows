@@ -470,6 +470,12 @@ bool ElfLoader::LoadDependencies()
         SymbolResolver::GetInstance().RegisterLibrary("ld-linux.so", "INTERNAL");
         SymbolResolver::GetInstance().RegisterLibrary("ld-linux.so.2", "INTERNAL");
         SymbolResolver::GetInstance().RegisterLibrary("libasound.so.2", "INTERNAL");
+        // PulseAudio: Big Buck HD Wild dlopen()s libpulse-simple for sound.
+        // pulse2sdlBridge.cpp provides pa_simple over the same SDL sink.
+        SymbolResolver::GetInstance().RegisterLibrary("libpulse-simple.so.0", "INTERNAL");
+        SymbolResolver::GetInstance().RegisterLibrary("libpulse-simple.so", "INTERNAL");
+        SymbolResolver::GetInstance().RegisterLibrary("libpulse.so.0", "INTERNAL");
+        SymbolResolver::GetInstance().RegisterLibrary("libpulse.so", "INTERNAL");
         SymbolResolver::GetInstance().RegisterLibrary("libXxf86vm.so.1", "INTERNAL");
         SymbolResolver::GetInstance().RegisterLibrary("libX11.so.6", "INTERNAL");
         SymbolResolver::GetInstance().RegisterLibrary("libXext.so.6", "INTERNAL");

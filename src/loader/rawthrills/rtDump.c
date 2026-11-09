@@ -445,7 +445,7 @@ void rtDetourAddress(uint32_t address, void *replacement)
     *(int32_t *)(target + 1) = (int32_t)((uint8_t *)replacement - (target + 5));
 }
 
-int rtDetour(const char *name, void *replacement)
+static int detour(const char *name, void *replacement, int optional)
 {
     void *target = lookup(name);
 
@@ -453,11 +453,27 @@ int rtDetour(const char *name, void *replacement)
         fprintf(stderr, "Raw Thrills: hook %s at %p\n", name, target);
     if (!target)
     {
-        log_warn("Raw Thrills: hook target %s not found", name);
+        // Optional hooks belong to dongle/IO schemes a given game may not use;
+        // the loader tries the whole set, so a miss there is expected, not a
+        // warning. A required hook missing still warns.
+        if (optional)
+            log_debug("Raw Thrills: optional hook target %s not present, skipped", name);
+        else
+            log_warn("Raw Thrills: hook target %s not found", name);
         return -1;
     }
     rtDetourAddress((uint32_t)(uintptr_t)target, replacement);
     return 0;
+}
+
+int rtDetour(const char *name, void *replacement)
+{
+    return detour(name, replacement, 0);
+}
+
+int rtDetourOptional(const char *name, void *replacement)
+{
+    return detour(name, replacement, 1);
 }
 
 // Copy the first prologueLength bytes of a function (whole, position

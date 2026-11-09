@@ -123,6 +123,16 @@ typedef struct
     int value;
 } RtStub;
 
+// A dongle hasp_encrypt/decrypt answer compiled into the loader, used when no
+// recorded answer file is present so the game's data decrypts with no hasp/
+// folder: the input's hex key (first haspAnswerKeySize bytes) and the response.
+typedef struct
+{
+    const char *key;            // hex of the first haspAnswerKeySize input bytes
+    const unsigned char *data;  // the response bytes
+    uint32_t len;               // their count (must match the call's length)
+} RtAnswer;
+
 // Everything the loader needs to know about one Raw Thrills game dump.
 typedef struct RtGame
 {
@@ -174,6 +184,10 @@ typedef struct RtGame
     // dongle memory the game reads (hhl_mem.dmp). NULL: none.
     const char *haspAnswers;
     int haspAnswerKeySize;
+    // Dongle answers compiled into the loader, used as a fallback when no
+    // recorded answer file is present: the game's AES-encrypted data then
+    // decrypts with no hasp/ folder at all. Terminated by a NULL key. NULL: none.
+    const RtAnswer *builtinAnswers;
 
     // A library statically linked into the game whose dumped state is
     // unusable: the game's exported functions with this prefix are sent to

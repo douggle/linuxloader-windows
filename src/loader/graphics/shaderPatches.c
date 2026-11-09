@@ -339,6 +339,10 @@ char *shaderPatchedSource(GLsizei count, const GLchar *const *string, const GLin
 
     if ((!isRawThrillsGame() && !isNamcoEs1Game()) || count <= 0)
         return NULL;
+    // RT_NO_SHADER_PATCH=1: hand the game's shaders to the driver unmodified
+    // (as TeknoParrot does), to tell a shader-patch problem from a GL one.
+    if (getenv("RT_NO_SHADER_PATCH"))
+        return NULL;
 
     for (GLsizei i = 0; i < count; i++)
         total += length && length[i] >= 0 ? (size_t)length[i] : strlen(string[i]);
@@ -386,8 +390,8 @@ void glShaderSource(GLuint shader, GLsizei count, const GLchar *const *string, c
     patchedShaderSource(real, shader, count, string, length);
 }
 
-// The Namco games' shader compiles and links that fail, with the driver's
-// message (a shader the driver refuses draws nothing).
+// Shader compiles and links that fail, with the driver's message (a shader the
+// driver refuses draws nothing -- e.g. objects render as black silhouettes).
 static void namcoShaderLog(GLuint object, int link, int arb)
 {
     void (*getiv)(GLuint, GLenum, GLint *) = NULL;
@@ -411,7 +415,7 @@ static void namcoShaderLog(GLuint object, int link, int arb)
     if (ok)
         return;
     getLog(object, sizeof(log), NULL, log);
-    log_warn("Namco: shader %u %s failed: %s", object, link ? "link" : "compile", log);
+    log_warn("shader %u %s failed: %s", object, link ? "link" : "compile", log);
 }
 
 #undef glCompileShader
@@ -421,7 +425,7 @@ void glCompileShader(GLuint shader)
     if (!real)
         *(void **)&real = dlsym(RTLD_NEXT, "glCompileShader");
     real(shader);
-    if (isNamcoEs1Game())
+    if (isNamcoEs1Game() || isRawThrillsGame())
         namcoShaderLog(shader, 0, 0);
 }
 
@@ -432,7 +436,7 @@ void glLinkProgram(GLuint program)
     if (!real)
         *(void **)&real = dlsym(RTLD_NEXT, "glLinkProgram");
     real(program);
-    if (isNamcoEs1Game())
+    if (isNamcoEs1Game() || isRawThrillsGame())
         namcoShaderLog(program, 1, 0);
 }
 
@@ -443,7 +447,7 @@ void glCompileShaderARB(GLuint shader)
     if (!real)
         *(void **)&real = dlsym(RTLD_NEXT, "glCompileShaderARB");
     real(shader);
-    if (isNamcoEs1Game())
+    if (isNamcoEs1Game() || isRawThrillsGame())
         namcoShaderLog(shader, 0, 1);
 }
 
@@ -454,7 +458,7 @@ void glLinkProgramARB(GLuint program)
     if (!real)
         *(void **)&real = dlsym(RTLD_NEXT, "glLinkProgramARB");
     real(program);
-    if (isNamcoEs1Game())
+    if (isNamcoEs1Game() || isRawThrillsGame())
         namcoShaderLog(program, 1, 1);
 }
 
