@@ -55,6 +55,11 @@ Starting at the restored entry avoids both the boot checks and watchdog.
 This build does not require HASP answers or Rockey reply files: native
 gameplay was confirmed without them.
 
+Cruis'n Blast 2.31 is not this case: its Sentinel LDK Envelope decrypts its own
+code and ends in a query to a physical USB key, so there is no fixed mask to
+restore and no entry to start at; see
+[cruisn-blast-231.md](cruisn-blast-231.md).
+
 ## Cabinet input and paths
 
 The game uses the same g3 JAMMA switch and gun events as Big Buck World.
