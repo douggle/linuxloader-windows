@@ -9,6 +9,11 @@
 
 #define JURASSIC_PARK_RT 0xf7503efd                              // Raw Thrills, v1.33
 #define CRUISN_BLAST_RT 0xddaf18ba                               // Raw Thrills, v1.25
+// Cruis'n Blast 2.31's dump: the id is the CRC of the first 0x4000 bytes of
+// its code segment, as the game process computes it (mainL.c's callback);
+// the launcher matches the whole file by RT_GAME_231_FILE_CRC below.
+#define CRUISN_BLAST_231_RT 0x53bf0fbf
+#define CRUISN_BLAST_231_FILE_CRC 0xc19fbb51
 #define GALAGA_ASSAULT_RT 0x2986f0ca                             // Raw Thrills
 #define WALKING_DEAD_RT 0xf6330a20                               // Raw Thrills (patched copy: libcsv path shortened)
 #define TERMINATOR_SALVATION_RT 0xa999339e                       // Raw Thrills, v01.25.00

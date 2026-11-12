@@ -242,6 +242,8 @@ static void loadAnswers(const char *dir, int keySize)
 // game shuts itself down, so this one stays until the process ends.
 static int dongleWriteLoop(void)
 {
+    if (getenv("RT_WRITELOOP_ONCE"))
+        return HASP_STATUS_OK;
     for (;;)
         usleep(100 * 1000);
     return HASP_STATUS_OK;
@@ -264,6 +266,11 @@ void rtInstallDongle(const RtGame *game)
         loadAnswers(game->haspAnswers, game->haspAnswerKeySize);
     loadMemory(game);
     rtDetour("hasp_login", haspLogin);
+    // The same login under the API's other entry points (the envelope
+    // runtime in some builds goes through one of these).
+    rtDetourOptional("hasp_login_scope", haspLogin);
+    rtDetourOptional("hasp_login_ex", haspLogin);
+    rtDetourOptional("hasp_login_port", haspLogin);
     rtDetour("hasp_logout", haspOk);
     rtDetour("hasp_read", haspRead);
     rtDetour("hasp_write", haspWrite);

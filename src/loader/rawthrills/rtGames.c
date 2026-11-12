@@ -3,6 +3,8 @@
 #include "../config/config.h"
 #include "../hardware/lindbergh/jvs.h"
 #include "cruisnblast/cbImports.h"
+#include "cruisnblast/cbImports231.h"
+#include "cruisnblast/cbEnvelope231.h"
 #include "galagaassault/gaImports.h"
 #include "pacman/pmImports.h"
 #include "doodlejump/djImports.h"
@@ -1591,6 +1593,70 @@ static const RtGame rtGames[] = {
         .aspect = 0x08bdd974,
         // "push %ebp; push %edi; push %esi; push %ebx; mov $0x1,%ebx"
         .parseArgsPrologue = 9,
+    },
+    {
+        // Cruis'n Blast 2.31 (the dump of the 2.31 install, version.txt
+        // "Cruisn_Blast 2.31 / OS 03.12.12u"). Same g5 engine and HASP
+        // envelope runtime as 1.25, different build: every address the 1.25
+        // entry pins down has to be re-derived, which is what this entry is
+        // for. See docs/cruisn-blast-231.md.
+        .crc32 = CRUISN_BLAST_231_RT,
+        .fileCrc32 = CRUISN_BLAST_231_FILE_CRC,
+        // The envelope's game-import slots are this build's own (the 1.25
+        // ones hold ciphertext here), and its decrypted import list is
+        // present: tools/rt-imports.py <dump> <got> open64 cbGameImports231.
+        // Until that table is generated nothing is written (count 0), which
+        // leaves the game's own GOT stubs in place rather than patching a
+        // wrong address.
+        .envelopeSelfSlot = -1,
+        // The stub tables the envelope's code jumps through (0xa201d60 /
+        // 0xa201ec0), named from a live run: see cruisnblast/cbEnvelope231.h.
+        .envelopeGot = CB231_ENVELOPE_GOT,
+        .envelopeImports = cbEnvelopeImports231,
+        .envelopeImportCount = sizeof(cbEnvelopeImports231) / sizeof(cbEnvelopeImports231[0]),
+        // The game's own GOT (0xa201e4c onwards), re-resolved by name: see
+        // cruisnblast/cbImports231.h (tools/rt-imports.py <dump> 0xa201d60).
+        // NOT enabled yet: writing all 676 resolved pointers aborts the game
+        // in free() before the Raw Thrills layer is installed, so at least one
+        // of the generated slots is not a GOT entry (the importer assumes the
+        // slots run contiguously between the executable's relocated ones; this
+        // runtime's GOT has extra non-import entries interleaved). The header
+        // is generated and kept here; the wiring goes live once the slot list
+        // is validated against the runtime table.
+        // Measured on this dump: all 676 slots patched aborts in free()
+        // before the Raw Thrills layer installs, and a 29-slot prefix does not
+        // crash but leaves the envelope's licence worker failing (it exits 1
+        // through 0x9ef7324) while the parent spins, so neither is a win. The
+        // table is kept generated (cruisnblast/cbImports231.h) but stays off.
+#if 0
+        .gameImports = cbGameImports231,
+        .gameImportCount = sizeof(cbGameImports231) / sizeof(cbGameImports231[0]),
+#endif
+        .extraLibs = cbExtraLibs,
+        // The dongle, as 1.25: login for HASP's default feature, the memory
+        // file the game reads, no recorded answers (2.31's data is plaintext
+        // - see below), so hasp_encrypt/decrypt answer with the stand-in.
+        .haspFeature = 0,
+        .haspMemoryFileId = 0xfff4,
+        // No haspReadPatch/WritePatch/SessionInfoPatch: the free space the
+        // 1.25 entry patches (0x804829a, ...) is untouched zeroes in this
+        // dump, so its HASP bodies are not there. hasp_login/read/write/
+        // encrypt/decrypt/get_sessioninfo are exported by name in this
+        // build, so rtDongle.c hooks them through dlsym instead.
+        .stubs = cbStubs,
+        .rootPath = "/pm",
+        // Unlike the 1.25 dump this one has no programs_dec: its
+        // g5/race/data/programs_enc holds plaintext scripts (619 files), so
+        // the encrypted->decrypted redirect must stay off or the game is
+        // pointed at a directory that does not exist.
+        .pathAliases = cbPathAliases,
+        .gameInputMapsSymbol = "_Z13GameInputMapsv",
+        .ioLoopSymbol = "io_rio_loop",
+        .extraMaps = cbExtraMaps,
+        .ioInputs = cbIoInputs,
+        .keyDrive = cbKeyDrives,
+        .wheelSetSymbol = "Wheel_Set",
+        .parseArgsSymbol = "_Z20ParseCommandLineArgsiPPc",
     },
     {
         .crc32 = GALAGA_ASSAULT_RT,
