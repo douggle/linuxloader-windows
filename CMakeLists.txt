@@ -240,6 +240,10 @@ elseif(WIN32 OR MINGW OR CMAKE_C_COMPILER MATCHES "mingw")
     list(FILTER SRC_FILES EXCLUDE REGEX "/loader/config/squashfs\\.c$")
     list(FILTER SRC_FILES EXCLUDE REGEX "/loader/input/controlMapper\\.c$")
     list(FILTER SRC_FILES EXCLUDE REGEX "/loader/input/evdevFfb\\.c$")
+    # The WMMT4 emulation patches the game's x86 code through Linux's /proc and
+    # the ELF layout, and its assembly trampolines are written for ELF's symbol
+    # spelling, so it belongs with the other Linux-only layers.
+    list(FILTER SRC_FILES EXCLUDE REGEX "/loader/namco/namcoEs1Wmmt4\\.c$")
     # The evdev controllers themselves: they are the Linux input devices.
     # platform/win32/win32Devices.c answers their entry points with "none",
     # so the games use SDL's input.
