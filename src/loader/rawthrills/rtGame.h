@@ -325,6 +325,14 @@ typedef struct RtGame
     uint32_t wheelMenuForce;
     uint32_t wheelEffectsFlag;
 
+    // Link play (Cruis'n Blast, see rtLink.c): the game's own-IP lookup (it
+    // ioctls SIOCGIFADDR on "eth0") and the machine ID global its Network
+    // Adjustments write, which picks this cabinet's address out of
+    // [Network] IP_CAB1..IP_CAB4. 0: the game keeps its own lookup.
+    uint32_t linkIpAddress;    // uint32_t f(void), an in_addr
+    size_t linkIpPrologue;     // bytes of it relocated into a trampoline
+    uint32_t machineIdAddress; // int, the game's network machine ID
+
     // Video mode (g5 engine): gCLArgs width, height (int) and aspect (float),
     // set from the command line by ParseCommandLineArgs.
     const char *parseArgsSymbol; // NULL: "ParseCommandLineArgs"

@@ -18,6 +18,7 @@
 #include "../graphics/frameScale.h"
 #include "../log/log.h"
 #include "../common/desktopInput.h"
+#include "../platform/win32/posix.h"
 
 #pragma pack(push, 1)
 typedef struct

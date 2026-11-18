@@ -95,6 +95,8 @@ extern "C"
     // Our own, so a CRT that has (or inlines) one does not clash with it.
     int ll_asprintf(char **strp, const char *fmt, ...);
 #define asprintf ll_asprintf
+    char *ll_strndup(const char *s, size_t n);
+#define strndup(s, n) ll_strndup(s, n)
 
     int pthread_getattr_default_np(pthread_attr_t *attr);
     int pthread_setattr_default_np(const pthread_attr_t *attr);

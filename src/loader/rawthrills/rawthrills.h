@@ -37,6 +37,7 @@ int rtDetour(const char *name, void *replacement);
 int rtDetourOptional(const char *name, void *replacement);
 void rtDetourAddress(uint32_t address, void *replacement);
 void *rtTrampoline(const char *name, size_t prologueLength);
+void *rtTrampolineAddress(uint32_t address, size_t prologueLength);
 int rtFixImports(const RtGame *game);
 void rtClearBss(const RtGame *game);
 int rtReplaceLib(const RtGame *game);
@@ -45,6 +46,8 @@ void rtInstallIo(const RtGame *game);
 void rtInstallInput(const RtGame *game);
 void rtInstallJamma(const RtGame *game);
 void rtInstallFfb(const RtGame *game);
+// Link play (Cruis'n Blast): its own link address from [Network] IP_CAB1..4.
+void rtInstallLink(const RtGame *game);
 // Evdev input (the loader's JVS state): whether a switch input is held.
 struct JVSIO;
 int rtIoSwitchState(const RtIoInput *in, struct JVSIO *io);

@@ -654,6 +654,26 @@ int pipe(int fds[2])
     return _pipe(fds, 4096, _O_BINARY);
 }
 
+// strndup(): POSIX 2008, which the CRT of some of the loader's builds does
+// not carry (namcoN2Graphics.c calls it). Its own name, reached through the
+// posix.h macro, so a CRT that does have one does not clash with it.
+char *ll_strndup(const char *s, size_t n)
+{
+    size_t len;
+    char *copy;
+
+    if (!s)
+        return NULL;
+    for (len = 0; len < n && s[len]; len++)
+        ;
+    copy = malloc(len + 1);
+    if (!copy)
+        return NULL;
+    memcpy(copy, s, len);
+    copy[len] = '\0';
+    return copy;
+}
+
 // The reentrant time conversions glibc has: the CRT's are not reentrant, and
 // the loader logs from the game's threads.
 struct tm *localtime_r(const time_t *timep, struct tm *result)

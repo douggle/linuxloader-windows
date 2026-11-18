@@ -1588,6 +1588,12 @@ static const RtGame rtGames[] = {
         .wheelInRace = CB_WHEEL_IN_RACE,
         .wheelMenuForce = CB_WHEEL_MENU_FORCE,
         .wheelEffectsFlag = CB_WHEEL_EFFECTS,
+        // Link play: its own address, read off "eth0", and the machine ID
+        // the socket init stores before asking for it (see rtLink.c).
+        // "push %esi; push %ebx; sub $0x44,%esp"
+        .linkIpAddress = 0x0838d8e0,
+        .linkIpPrologue = 5,
+        .machineIdAddress = 0x09c5a264,
         .parseArgsSymbol = "_Z20ParseCommandLineArgsiPPc",
         .resolution = 0x08bdd960,
         .aspect = 0x08bdd974,

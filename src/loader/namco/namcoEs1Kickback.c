@@ -360,7 +360,11 @@ void namcoEs1KickbackClose(void)
 
 ssize_t namcoEs1KickbackWrite(const void *buf, size_t count)
 {
+    static unsigned long writeCalls;
+
     pthread_mutex_lock(&lock);
+    if (trace && (++writeCalls <= 40 || writeCalls % 200 == 0))
+        traceBytes("write", buf, count);
     resynchronizeAfterIdle(nowMs());
     if (commandLen + count > sizeof(commandBytes))
         commandLen = 0;
@@ -376,6 +380,8 @@ ssize_t namcoEs1KickbackWrite(const void *buf, size_t count)
 
 ssize_t namcoEs1KickbackRead(void *buf, size_t count)
 {
+    static unsigned long readCalls;
+
     if (count == 0)
         return 0;
     pthread_mutex_lock(&lock);
@@ -383,6 +389,8 @@ ssize_t namcoEs1KickbackRead(void *buf, size_t count)
     size_t n = replyLen < count ? replyLen : count;
     memcpy(buf, replyBytes, n);
     drop(replyBytes, &replyLen, n);
+    if (trace && (++readCalls <= 20 || readCalls % 200 == 0))
+        fprintf(stderr, "Namco kickback: read #%lu of %zu -> %zu [%s]\n", readCalls, count, n, stateName());
     // The self-check is over once its reports are read.
     if (n && !replyLen && state == STR_SELF_CHECKING)
     {

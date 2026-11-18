@@ -309,6 +309,15 @@ typedef struct
     int analogue_deadzone_start[8];
     int analogue_deadzone_middle[8];
     int analogue_deadzone_end[8];
+    // Stretch the analogue travel either side of its dead zones instead of
+    // cutting them out, so the axis leaves its centre smoothly.
+    int analogue_rescale;
+    // Where each axis actually rests as a fraction of its travel, when that is
+    // not the middle of the range. 0 leaves the axis alone.
+    float analogue_centre[8];
+    // Wheel autocenter strength sent to the device at startup, 0..65535. 0
+    // leaves the wheel free to rest wherever it was left.
+    int ffb_autocenter;
 } ArcadeInputs;
 
 typedef struct

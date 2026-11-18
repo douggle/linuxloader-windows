@@ -479,9 +479,9 @@ int rtDetourOptional(const char *name, void *replacement)
 // Copy the first prologueLength bytes of a function (whole, position
 // independent instructions) and jump back after them, so the original can
 // still be called once its entry is detoured.
-void *rtTrampoline(const char *name, size_t prologueLength)
+void *rtTrampolineAddress(uint32_t address, size_t prologueLength)
 {
-    uint8_t *target = lookup(name);
+    uint8_t *target = (uint8_t *)(uintptr_t)address;
     if (!target)
         return NULL;
     uint8_t *tramp = mmap(NULL, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -492,6 +492,11 @@ void *rtTrampoline(const char *name, size_t prologueLength)
     *(int32_t *)(tramp + prologueLength + 1) =
         (int32_t)((target + prologueLength) - (tramp + prologueLength + 5));
     return tramp;
+}
+
+void *rtTrampoline(const char *name, size_t prologueLength)
+{
+    return rtTrampolineAddress((uint32_t)(uintptr_t)lookup(name), prologueLength);
 }
 
 // A dump taken once the game was running also holds the runtime state of

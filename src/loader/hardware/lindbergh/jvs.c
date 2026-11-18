@@ -274,6 +274,110 @@ void writeFeatures(JVSPacket *outputPacket, JVSCapabilities *capabilities)
  *
  * @returns The status of the entire operation
  */
+// The board's serial pass-through: the card vendor behind the ES1 JVS board
+// sends its reports there, and the game polls 18 (bytes waiting) then 15 (read
+// them). Nothing can be passed by itself, but the reports the reader would send
+// can be queued with WMMT4_VENDOR_FRAME=<hex bytes>, one report per state of the
+// vendor's state machine, separated by '|'.
+#define VENDOR_REPORTS 8
+typedef struct
+{
+    unsigned char data[64];
+    int length;
+} VendorReport;
+
+static VendorReport vendorReports[VENDOR_REPORTS];
+static int vendorReportCount;
+static unsigned char vendorPending[64];
+static int vendorPendingLen, vendorPendingPos;
+
+static void vendorParse(void)
+{
+    static int parsed;
+    const char *hex;
+
+    if (parsed)
+        return;
+    parsed = 1;
+    hex = getenv("WMMT4_VENDOR_FRAME");
+    if (!hex)
+    {
+        // The reader's answers, as WMMT4's IC card vendor asks for them: its
+        // status (command '2') and the result of the reset it was told to do
+        // (command '0', '1' = reset done, anything else is "Reset failed").
+        // The status carries the reader's latch ('1') and its flags, whose bit
+        // 3 is the card stacker still holding cards (clear is "Card stacker
+        // empty", the red "cards sold out" on the check screen).
+        static const unsigned char status[] = {0x02, 0x32, 0x00, 0x04, 0x00, 0x08, 0x31, 0x00, 0x6f, 0x03};
+        static const unsigned char reset[] = {0x02, 0x30, 0x00, 0x01, 0x31, 0x62, 0x03};
+
+        memcpy(vendorReports[0].data, status, sizeof(status));
+        vendorReports[0].length = sizeof(status);
+        memcpy(vendorReports[1].data, reset, sizeof(reset));
+        vendorReports[1].length = sizeof(reset);
+        vendorReportCount = 2;
+        vendorPendingLen = 0;
+        vendorPendingPos = 0;
+        return;
+    }
+    while (hex && *hex && vendorReportCount < VENDOR_REPORTS)
+    {
+        VendorReport *report = &vendorReports[vendorReportCount];
+
+        while (*hex && *hex != '|')
+        {
+            char *end;
+            unsigned long value;
+
+            if (*hex == ' ')
+            {
+                hex++;
+                continue;
+            }
+            value = strtoul(hex, &end, 16);
+            if (end == hex || report->length >= (int)sizeof(report->data))
+                break;
+            report->data[report->length++] = (unsigned char)value;
+            hex = end;
+        }
+        if (report->length > 0)
+            vendorReportCount++;
+        if (*hex == '|')
+            hex++;
+    }
+    vendorPendingLen = 0;
+    vendorPendingPos = 0;
+}
+
+// The reader answers one report per state of the vendor's own state machine:
+// the game side names the report (an index into the list) when it enters the
+// state that asks for it, -1 is nothing to hand over. The report is queued
+// once, so the reads that follow it see an empty reader instead of the same
+// report over and over.
+int namcoJvsVendorReport = -1;
+
+static int vendorWaiting(void)
+{
+    vendorParse();
+    if (vendorPendingPos >= vendorPendingLen && namcoJvsVendorReport >= 0)
+    {
+        vendorPendingLen = 0;
+        vendorPendingPos = 0;
+        if (namcoJvsVendorReport < vendorReportCount)
+        {
+            vendorPendingLen = vendorReports[namcoJvsVendorReport].length;
+            memcpy(vendorPending, vendorReports[namcoJvsVendorReport].data, vendorPendingLen);
+        }
+        namcoJvsVendorReport = -1;
+    }
+    return vendorPendingLen - vendorPendingPos;
+}
+
+static unsigned char vendorTake(void)
+{
+    return vendorPending[vendorPendingPos++];
+}
+
 JVSStatus processPacket(int *packetSize)
 {
     readPacket(&inputPacket);
@@ -618,7 +722,15 @@ JVSStatus processPacket(int *packetSize)
                 }
                 outputPacket.data[outputPacket.length++] = REPORT_SUCCESS;
                 if (known)
-                    outputPacket.data[outputPacket.length++] = 0;
+                {
+                    int sub = inputPacket.data[index + 1];
+                    int waiting = vendorWaiting();
+
+                    outputPacket.data[outputPacket.length++] = (unsigned char)waiting;
+                    if (sub == 0x15 && waiting > 0)
+                        for (int i = 0; i < waiting; i++)
+                            outputPacket.data[outputPacket.length++] = vendorTake();
+                }
                 break;
             }
             if (inputPacket.data[index + 1] == 0x18)

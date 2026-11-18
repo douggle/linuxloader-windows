@@ -184,6 +184,12 @@ Will cause input on analogue input 1 to be clamped as follows:
   * In the middle of the range the center 13% of the left of middle, and 13% of the right of middle will snap to the middle.
   * At the end of the range the last 10% of the range will be set to 100%, similarly to the start case.
 
+`FFB_AUTOCENTER` in the `[EVDEV]` section sends an autocenter strength (0 to 65535, default 0) to the wheel when it is opened. A wheel with no centring spring of its own rests wherever it was last left, so its position at startup is not a fixed centre and the game reads it as a permanent slight turn; a light autocenter holds it in one place and makes the centre repeatable and correctable with `ANALOGUE_CENTRE_n`.
+
+An axis can also rest off the middle of its range, which reads as a permanent turn or push from the moment the game starts. Set `ANALOGUE_CENTRE_1` in the `[EVDEV]` section to the fraction of the travel where the device actually rests (a wheel sitting at 34526 of 0..65535 rests at `0.5268`); that position is then treated as the middle and each half of the travel is stretched to fill its side, so both ends still reach full deflection. Left unset, or 0, the axis is used as it comes.
+
+Cutting a deadzone out of the range leaves a step at its edge: the axis jumps from the middle straight to the value just outside the band, which a steering wheel feels as a notch. Set `ANALOGUE_RESCALE = 1` in the `[EVDEV]` section to stretch the travel outside the deadzones over the whole range instead, so the axis leaves its centre smoothly and still reaches full deflection at the end of its travel. It applies to every analogue input and is off by default (the deadzones are clamped as described above).
+
 ### Audio Setup
 
 There are currently no audio options that you can set. If you have a stereo sound card installed then the audio will be downmixed to stereo. If you have a 5.1 sound card installed and the game supports surround sound, each surround channel should be passed through properly and should play sound as it was originally intended.

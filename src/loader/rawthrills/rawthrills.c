@@ -410,6 +410,7 @@ int rtInit(void)
     rtInstallInput(g);
     rtInstallJamma(g);
     rtInstallFfb(g);
+    rtInstallLink(g);
     if (g->crc32 == MOTOGP_RT && g->install == NULL)
         rtMgpFfbInstall();
     // Before the video hooks: they call through to sdl12-compat.

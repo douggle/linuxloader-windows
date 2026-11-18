@@ -508,7 +508,21 @@ void applyIniConfig(EmulatorConfig *config, const IniConfig *ini)
                        &config->arcadeInputs.analogue_deadzone_middle[i], &config->arcadeInputs.analogue_deadzone_end[i]);
             }
         }
+
+        // Where the device actually rests, as a fraction of its travel, when
+        // that is not the middle of the range (a wheel whose sensor centre and
+        // mechanical centre disagree). 0 leaves the axis alone.
+        sprintf(key, "ANALOGUE_CENTRE_%d", i + 1);
+        config->arcadeInputs.analogue_centre[i] = getFloat(ini, "EVDEV", key, 0.0f);
     }
+
+    // Off by default: clamping the dead zone out is what every other game's
+    // analogue input already expects.
+    config->arcadeInputs.analogue_rescale = getInt(ini, "EVDEV", "ANALOGUE_RESCALE", 0);
+
+    // A wheel with no centring spring of its own rests wherever it was left,
+    // which the game reads as a permanent slight turn. 0 leaves it free.
+    config->arcadeInputs.ffb_autocenter = getInt(ini, "EVDEV", "FFB_AUTOCENTER", 0);
 }
 
 int initConfig(const char *configFilePath)

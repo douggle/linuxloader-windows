@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -34,6 +35,58 @@
 #include "../log/log.h"
 
 int wmmt4ServerTrace;
+
+// WMMT4_SERVER_HOST: the services' requests are forwarded to that server (a
+// name or an address) instead of answered here. The card reader, the settings
+// and everything else the loader does stay local; only the traffic to ALL.Net,
+// Mucha and the game server leaves. Unset: the loader answers them itself.
+static char remoteHost[256];
+
+// WMMT4_SERVER_PORTS: which of the services' ports go to WMMT4_SERVER_HOST
+// (a comma or space separated list, e.g. "9002"). Unset forwards every port,
+// which is what the flag did before this one existed. The cabinet's web URLs
+// (443, and 80 for a plain one) are its ranking and update requests; naming
+// only the arcade's own port leaves a web server on 443 exactly where it is.
+static char remotePorts[128];
+
+static int forwardedPort(unsigned port)
+{
+    char list[sizeof(remotePorts)];
+    char *end, *p;
+
+    if (!remotePorts[0])
+        return 1;
+    snprintf(list, sizeof(list), "%s", remotePorts);
+    for (p = list; p && *p; p = end)
+    {
+        unsigned value = (unsigned)strtoul(p, &end, 10);
+
+        if (end == p)
+            break;
+        if (value == port)
+            return 1;
+        while (*end == ',' || *end == ' ' || *end == '\t')
+            end++;
+    }
+    return 0;
+}
+
+// The port a service URL names (https -> 443, http -> 80 when it names none),
+// the same reading forwardCurl makes of it.
+static unsigned urlPort(const char *url)
+{
+    int tls = !strncmp(url, "https://", 8);
+    const char *authority = url + (tls ? 8 : 7), *slash = strchr(authority, '/');
+    const char *colon = memchr(authority, ':', slash ? (size_t)(slash - authority) : strlen(authority));
+    unsigned port = colon ? (unsigned)strtoul(colon + 1, NULL, 10) : 0;
+
+    return port ? port : (unsigned)(tls ? 443 : 80);
+}
+
+// WMMT4_BOOT_TRACE: counts the game's own outbound attempts, so "nothing is
+// sent" is a measurement (0 calls) rather than an inference from silence.
+static int bootTraceNet;
+static unsigned connectCalls, curlCalls;
 
 // The services' names, as the game dials them.
 static int serverName(const char *name)
@@ -79,12 +132,37 @@ __attribute__((force_align_arg_pointer)) static struct hostent *gameGethostbynam
     return realGethostbyname(local ? SERVER_ADDRESS : name);
 }
 
+// The remote server's socket, for a forwarded connection. -2: the host could
+// not be resolved (errno is not the remote's); otherwise connect()'s result.
+#define CONNECT_LOOKUP_FAILED (-2)
+static int connectHost(int fd, unsigned port)
+{
+    struct addrinfo hints = {0}, *result = NULL;
+    char service[16];
+    int r;
+
+    snprintf(service, sizeof(service), "%u", port);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (realGetaddrinfo(remoteHost, service, &hints, &result) != 0 || !result)
+        return CONNECT_LOOKUP_FAILED;
+    r = realConnect(fd, result->ai_addr, result->ai_addrlen);
+    freeaddrinfo(result);
+    return r;
+}
+
 // The services' address, and the game server's ports on this machine (443
 // of the URI the game has before ALL.Net answers), are the loader's TLS
 // server.
 __attribute__((force_align_arg_pointer)) static int gameConnect(int fd, const struct sockaddr *address,
                                                                 socklen_t length)
 {
+    if (bootTraceNet && address && address->sa_family == AF_INET && ++connectCalls <= 30)
+    {
+        const struct sockaddr_in *to = (const struct sockaddr_in *)address;
+        fprintf(stderr, "WMMT4 boot: connect call %u to %s:%u\n", connectCalls,
+                inet_ntoa(to->sin_addr), ntohs(to->sin_port));
+    }
     if (address && address->sa_family == AF_INET && length >= sizeof(struct sockaddr_in) && tlsPort)
     {
         struct sockaddr_in to = *(const struct sockaddr_in *)address;
@@ -92,6 +170,19 @@ __attribute__((force_align_arg_pointer)) static int gameConnect(int fd, const st
         int server = to.sin_addr.s_addr == inet_addr(SERVER_ADDRESS);
         if (server || (to.sin_addr.s_addr == htonl(INADDR_LOOPBACK) && (port == 443 || port == 9002 || port == 10082)))
         {
+            // Forwarded: the game's own TLS handshake and its requests run over
+            // this connection unchanged, to the server named. WMMT4_SERVER_PORTS
+            // can keep the web ports local while the arcade's own port goes out.
+            if (remoteHost[0] && forwardedPort(port))
+            {
+                if (wmmt4ServerTrace)
+                    fprintf(stderr, "WMMT4 server: connect %s:%u -> %s\n", server ? SERVER_ADDRESS : "127.0.0.1",
+                            port, remoteHost);
+                return connectHost(fd, port);
+            }
+            if (remoteHost[0] && wmmt4ServerTrace)
+                fprintf(stderr, "WMMT4 server: connect %s:%u kept local (not in WMMT4_SERVER_PORTS %s)\n",
+                        server ? SERVER_ADDRESS : "127.0.0.1", port, remotePorts);
             if (wmmt4ServerTrace)
                 fprintf(stderr, "WMMT4 server: connect %s:%u -> the loader's server\n",
                         server ? SERVER_ADDRESS : "127.0.0.1", port);
@@ -235,9 +326,16 @@ static int splitUrl(const char *url, char *host, size_t hostSize, const char **p
     return 1;
 }
 
+static int forwardCurl(const char *url, const char *host, const char *path, const uint8_t *post, long postSize,
+                       CurlWrite header, void *headerData, CurlWrite write, void *writeData, long *status,
+                       char *why, size_t whySize);
+
 __attribute__((force_align_arg_pointer)) static int gameCurlPerform(void *handle)
 {
     char host[256], url[512];
+
+    if (bootTraceNet && ++curlCalls <= 20)
+        fprintf(stderr, "WMMT4 boot: curl_easy_perform call %u\n", curlCalls);
     const char *path;
     const uint8_t *post;
     long postSize;
@@ -282,6 +380,34 @@ __attribute__((force_align_arg_pointer)) static int gameCurlPerform(void *handle
     }
     if (!post)
         postSize = 0;
+
+    // WMMT4_SERVER_HOST: the request goes to that server, and its answer is
+    // what curl is given. No answer: the loader's own, so the cabinet still
+    // boots with the remote down.
+    if (remoteHost[0] && forwardedPort(urlPort(url)))
+    {
+        long remoteStatus = 0;
+        char why[160] = "";
+        if (forwardCurl(url, host, path, post, postSize, header, headerData, write, writeData, &remoteStatus, why,
+                        sizeof(why)))
+        {
+            if (wmmt4ServerTrace)
+                fprintf(stderr, "WMMT4 server: curl %s forwarded to %s -> %ld\n", url, remoteHost, remoteStatus);
+            free(readBody);
+            pthread_mutex_lock(&curlLock);
+            if ((c = curlState(handle)))
+                c->status = remoteStatus;
+            pthread_mutex_unlock(&curlLock);
+            return 0;
+        }
+        // Reported, not silent: a listener that cannot complete the handshake
+        // (a plain-text stub answering "wmmt4-ok", say) must not look like the
+        // remote answered. The local answer still goes to the game so the boot
+        // continues, and this line says what was lost. Written to stderr, so a
+        // kill of the cabinet cannot lose it in a stdio buffer.
+        fprintf(stderr, "WMMT4 server: curl %s NOT forwarded: %s; the loader's own answer is used\n", url,
+                why[0] ? why : "the forward failed");
+    }
 
     Wmmt4Response response = {404, "text/plain", NULL, 0};
     wmmt4ServerHandle(host, path, post, (size_t)postSize, &response);
@@ -416,6 +542,9 @@ static struct
     int (*shutdown)(void *);
     void (*free)(void *);
     void (*ctxSetVerify)(void *, int, void *);
+    void *(*clientMethod)(void);
+    int (*connect)(void *);
+    void (*ctxFree)(void *);
 } ssl;
 
 static void *sslContext;
@@ -439,6 +568,9 @@ static int loadSsl(void)
     *(void **)&ssl.shutdown = dlsym(lib, "SSL_shutdown");
     *(void **)&ssl.free = dlsym(lib, "SSL_free");
     *(void **)&ssl.ctxSetVerify = dlsym(lib, "SSL_CTX_set_verify");
+    *(void **)&ssl.clientMethod = dlsym(lib, "SSLv23_client_method");
+    *(void **)&ssl.connect = dlsym(lib, "SSL_connect");
+    *(void **)&ssl.ctxFree = dlsym(lib, "SSL_CTX_free");
     *(void **)&ssl.newBioMem = dlsym(crypto, "BIO_new_mem_buf");
     *(void **)&ssl.readX509 = dlsym(crypto, "PEM_read_bio_X509");
     *(void **)&ssl.readKey = dlsym(crypto, "PEM_read_bio_PrivateKey");
@@ -494,6 +626,204 @@ static int readAll(Connection *s, char *buffer, int size, int *have)
     if (n <= 0)
         return 0;
     *have += n;
+    return 1;
+}
+
+// A whole HTTP exchange with the remote server, TLS when asked: its status and
+// the server's answer verbatim (headers and body).
+// The reason a forwarding attempt failed, for the log: a listener that answers
+// without TLS, or not at all, is a failure of the forward, not of the request.
+static void whyFailed(char *why, size_t whySize, const char *what, unsigned port)
+{
+    if (why && whySize)
+        snprintf(why, whySize, "%s %s:%u", what, remoteHost, port);
+}
+
+static int remoteExchange(unsigned port, int tls, const char *request, size_t requestLength, char **answer,
+                          size_t *answerLength, int *status, char *why, size_t whySize)
+{
+    struct timeval timeout = {10, 0};
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    void *context = NULL, *session = NULL;
+    Connection c = {NULL, -1};
+    char *buffer = NULL;
+    size_t have = 0, capacity = 1 << 16;
+
+    *answer = NULL;
+    *answerLength = 0;
+    *status = 0;
+    if (why && whySize)
+        why[0] = 0;
+    if (fd < 0)
+    {
+        whyFailed(why, whySize, "cannot open a socket to", port);
+        return 0;
+    }
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+    {
+        int connected = connectHost(fd, port);
+
+        // The socket can be non-blocking (some of the game's are), in which case
+        // connect() answers EINPROGRESS and the outcome is only known once the
+        // socket is writable. Wait for that, then name the real reason instead
+        // of "Operation now in progress".
+        if (connected != 0 && errno == EINPROGRESS)
+        {
+            struct pollfd writable = {fd, POLLOUT, 0};
+            int ready = poll(&writable, 1, 10000), error = 0;
+            socklen_t errorSize = sizeof(error);
+
+            if (ready == 0)
+            {
+                if (why && whySize)
+                    snprintf(why, whySize, "no connection to %s:%u within 10 s", remoteHost, port);
+                goto done;
+            }
+            if (ready < 0)
+            {
+                if (why && whySize)
+                    snprintf(why, whySize, "cannot connect to %s:%u (%s)", remoteHost, port, strerror(errno));
+                goto done;
+            }
+            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &errorSize) != 0 || error)
+            {
+                if (why && whySize)
+                    snprintf(why, whySize, "cannot connect to %s:%u (%s)", remoteHost, port,
+                             strerror(error ? error : errno));
+                goto done;
+            }
+            connected = 0;
+        }
+        if (connected != 0)
+        {
+            if (connected == CONNECT_LOOKUP_FAILED)
+                whyFailed(why, whySize, "cannot resolve the forward's host for", port);
+            else if (why && whySize)
+                snprintf(why, whySize, "cannot connect to %s:%u (%s)", remoteHost, port, strerror(errno));
+            goto done;
+        }
+    }
+    c.fd = fd;
+    if (tls)
+    {
+        if (!(context = ssl.ctxNew(ssl.clientMethod())))
+        {
+            whyFailed(why, whySize, "cannot start TLS (no OpenSSL) for", port);
+            goto done;
+        }
+        ssl.ctxSetVerify(context, 0, NULL); // the services' certificates, as the game takes them
+        if (!(session = ssl.sslNew(context)) || ssl.setFd(session, fd) != 1)
+        {
+            whyFailed(why, whySize, "cannot set up TLS for", port);
+            goto done;
+        }
+        if (ssl.connect(session) != 1)
+        {
+            if (why && whySize)
+                snprintf(why, whySize, "TLS handshake failed with %s:%u (does it speak TLS?)", remoteHost, port);
+            goto done;
+        }
+        c.s = session;
+    }
+    for (size_t sent = 0; sent < requestLength;)
+    {
+        int n = connWrite(&c, request + sent, (int)(requestLength - sent));
+        if (n <= 0)
+        {
+            whyFailed(why, whySize, "cannot send the request to", port);
+            goto done;
+        }
+        sent += n;
+    }
+    if (!(buffer = malloc(capacity + 1)))
+    {
+        if (why && whySize)
+            why[0] = 0; // memory, not the remote's doing
+        goto done;
+    }
+    for (;;)
+    {
+        if (have == capacity && !(buffer = realloc(buffer, (capacity *= 2) + 1)))
+            goto done;
+        int n = connRead(&c, buffer + have, (int)(capacity - have));
+        if (n <= 0)
+            break;
+        have += n;
+    }
+    if (!have)
+    {
+        whyFailed(why, whySize, "no answer from", port);
+        goto done;
+    }
+    buffer[have] = 0;
+    sscanf(buffer, "HTTP/1.%*c %d", status);
+    *answer = buffer;
+    *answerLength = have;
+    buffer = NULL;
+done:
+    free(buffer);
+    if (session)
+    {
+        ssl.shutdown(session);
+        ssl.free(session);
+    }
+    if (context)
+        ssl.ctxFree(context);
+    if (fd >= 0)
+        close(fd);
+    return *answer != NULL;
+}
+
+// The request the game made, sent to the remote: its url's path there, its
+// body as it was. The answer's headers and body go to curl's callbacks.
+static int forwardCurl(const char *url, const char *host, const char *path, const uint8_t *post, long postSize,
+                       CurlWrite header, void *headerData, CurlWrite write, void *writeData, long *status,
+                       char *why, size_t whySize)
+{
+    int tls = !strncmp(url, "https://", 8);
+    unsigned port = urlPort(url);
+    char *request, *answer = NULL, *body;
+    size_t requestLength, answerLength, bodyLength;
+    int headLength;
+
+    request = malloc(1024 + (size_t)postSize);
+    if (!request)
+    {
+        if (why && whySize)
+            why[0] = 0;
+        return 0;
+    }
+    headLength = snprintf(request, 768,
+                          "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/x-www-form-urlencoded\r\n"
+                          "Content-Length: %ld\r\nConnection: close\r\n\r\n",
+                          path, host, postSize);
+    if (postSize > 0 && post)
+        memcpy(request + headLength, post, (size_t)postSize);
+    requestLength = (size_t)headLength + (postSize > 0 ? (size_t)postSize : 0);
+    int ok = remoteExchange(port, tls, request, requestLength, &answer, &answerLength, (int *)status, why, whySize);
+    free(request);
+    if (!ok)
+        return 0;
+    body = strstr(answer, "\r\n\r\n");
+    if (body)
+    {
+        bodyLength = answerLength - (size_t)(body + 4 - answer);
+        body += 4;
+    }
+    else
+    {
+        body = answer + answerLength;
+        bodyLength = 0;
+    }
+    if (header)
+    {
+        size_t headerLength = (size_t)(body - answer);
+        header(answer, 1, headerLength, headerData);
+    }
+    if (write && bodyLength)
+        write(body, 1, bodyLength, writeData);
+    free(answer);
     return 1;
 }
 
@@ -657,6 +987,15 @@ __attribute__((force_align_arg_pointer)) static int gameSslLibraryInit(void)
 void namcoEs1Wmmt4NetInstall(void)
 {
     wmmt4ServerTrace = getenv("WMMT4_SERVER_TRACE") != NULL;
+    bootTraceNet = getenv("WMMT4_BOOT_TRACE") != NULL;
+    if (getenv("WMMT4_SERVER_HOST"))
+    {
+        snprintf(remoteHost, sizeof(remoteHost), "%s", getenv("WMMT4_SERVER_HOST"));
+        if (getenv("WMMT4_SERVER_PORTS"))
+            snprintf(remotePorts, sizeof(remotePorts), "%s", getenv("WMMT4_SERVER_PORTS"));
+        fprintf(stderr, "WMMT4 server: the services are forwarded to %s:%s\n", remoteHost,
+                remotePorts[0] ? remotePorts : "every port");
+    }
     *(void **)&realGetaddrinfo = hookExecutableImport("getaddrinfo", (void *)gameGetaddrinfo);
     *(void **)&realGethostbyname = hookExecutableImport("gethostbyname", (void *)gameGethostbyname);
     *(void **)&realConnect = hookExecutableImport("connect", (void *)gameConnect);

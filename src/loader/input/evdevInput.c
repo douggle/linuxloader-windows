@@ -850,6 +850,8 @@ typedef struct
     int analogue_deadzone_start[8];
     int analogue_deadzone_middle[8];
     int analogue_deadzone_end[8];
+    int analogue_rescale;
+    float analogue_centre[8];
 } ThreadArguments;
 
 typedef struct
@@ -859,6 +861,69 @@ typedef struct
     double middle_max;
     double end_min;
 } AnalogueDeadzones;
+
+/**
+ * @brief Moves an axis's centre to the middle of its travel.
+ *
+ * A wheel whose sensor centre and mechanical centre disagree rests off the
+ * middle (2.7% of the travel on a G29 seen here), so centring the wheel leaves
+ * the game reading a slight turn, and one lock is reached before the other.
+ * Given where the device actually rests, this maps that position to 0.5 and
+ * stretches each half of the travel to fill its side, so both locks still
+ * reach the ends. A centre of 0 leaves the axis untouched.
+ */
+static double applyAnalogueCentre(double scaled, double centre)
+{
+    if (centre <= 0.0 || centre >= 1.0)
+        return scaled;
+    if (scaled <= centre)
+        return centre > 0.0 ? 0.5 * (scaled / centre) : 0.0;
+    return 0.5 + 0.5 * (scaled - centre) / (1.0 - centre);
+}
+
+/**
+ * @brief Applies an axis's dead zones to its 0..1 position.
+ *
+ * By default the zones are cut out: inside one the value is pinned to its
+ * edge (0, 0.5 or 1) and the axis jumps by the size of the zone when it
+ * leaves. With ANALOGUE_RESCALE set the remainder is stretched over the whole
+ * travel instead, so the axis leaves its centre smoothly and still reaches
+ * full deflection at the end of its range.
+ */
+static double applyAnalogueDeadzone(double scaled, const AnalogueDeadzones *deadzones, int rescale)
+{
+    if (scaled < 0.0)
+        scaled = 0.0;
+    if (scaled > 1.0)
+        scaled = 1.0;
+
+    if (rescale)
+    {
+        if (scaled <= deadzones->start_max)
+            return 0.0;
+        if (scaled >= deadzones->end_min)
+            return 1.0;
+        if (scaled < deadzones->middle_min)
+        {
+            double span = deadzones->middle_min - deadzones->start_max;
+            return span > 0.0 ? 0.5 * (scaled - deadzones->start_max) / span : 0.5;
+        }
+        if (scaled > deadzones->middle_max)
+        {
+            double span = deadzones->end_min - deadzones->middle_max;
+            return span > 0.0 ? 0.5 + 0.5 * (scaled - deadzones->middle_max) / span : 0.5;
+        }
+        return 0.5;
+    }
+
+    if (scaled < deadzones->start_max)
+        scaled = 0.0;
+    if (scaled > deadzones->middle_min && scaled < deadzones->middle_max)
+        scaled = 0.5;
+    if (scaled > deadzones->end_min)
+        scaled = 1.0;
+    return scaled;
+}
 
 static inline const char *typename(unsigned int type)
 {
@@ -1201,13 +1266,14 @@ static void seedAnalogue(ThreadArguments *args, int fd)
                  ((double)absInfo.maximum - (double)absInfo.minimum);
         if (trigger->isNeg)
             scaled = 1.0 - scaled;
-        if (scaled < args->analogue_deadzone_start[channel] / 100.0)
-            scaled = 0.0;
-        else if (scaled > 0.5 - (args->analogue_deadzone_middle[channel] / 100.0) &&
-                 scaled < 0.5 + (args->analogue_deadzone_middle[channel] / 100.0))
-            scaled = 0.5;
-        else if (scaled > 1.0 - (args->analogue_deadzone_end[channel] / 100.0))
-            scaled = 1.0;
+        scaled = applyAnalogueCentre(scaled, args->analogue_centre[channel]);
+
+        AnalogueDeadzones deadzones;
+        deadzones.start_max = args->analogue_deadzone_start[channel] / 100.0;
+        deadzones.middle_min = 0.5 - (args->analogue_deadzone_middle[channel] / 100.0);
+        deadzones.middle_max = 0.5 + (args->analogue_deadzone_middle[channel] / 100.0);
+        deadzones.end_min = 1.0 - (args->analogue_deadzone_end[channel] / 100.0);
+        scaled = applyAnalogueDeadzone(scaled, &deadzones, args->analogue_rescale);
         setAnalogue(channel, scaled * (pow(2, jvsBits) - 1));
     }
 }
@@ -1328,13 +1394,9 @@ void *controllerThread(void *_args)
 
                         if (args->controller->absTriggers[event.code].isAnalogue)
                         {
-                            // Deadzone handling
-                            if (scaled < analogue_deadzones[channel].start_max)
-                                scaled = 0.0;
-                            if (scaled > analogue_deadzones[channel].middle_min && scaled < analogue_deadzones[channel].middle_max)
-                                scaled = 0.5;
-                            if (scaled > analogue_deadzones[channel].end_min)
-                                scaled = 1.0;
+                            // Centre correction, then the dead zones
+                            scaled = applyAnalogueCentre(scaled, args->analogue_centre[channel]);
+                            scaled = applyAnalogueDeadzone(scaled, &analogue_deadzones[channel], args->analogue_rescale);
 
                             // Remap gun coords when blitStretching letterboxes the game
                             if (fboInitialized && dest.W > 0 && dest.H > 0 &&
@@ -1890,6 +1952,8 @@ ControllerStatus startControllerThreads(Controllers *controllers)
         memcpy(args->analogue_deadzone_middle, config->arcadeInputs.analogue_deadzone_middle,
                sizeof(config->arcadeInputs.analogue_deadzone_middle));
         memcpy(args->analogue_deadzone_end, config->arcadeInputs.analogue_deadzone_end, sizeof(config->arcadeInputs.analogue_deadzone_end));
+        args->analogue_rescale = config->arcadeInputs.analogue_rescale;
+        memcpy(args->analogue_centre, config->arcadeInputs.analogue_centre, sizeof(config->arcadeInputs.analogue_centre));
         createQuietThread(&controllers->thread[controllers->threadIndex++], controllerThread, args);
         controllers->controller[i].inUse = 1;
     }

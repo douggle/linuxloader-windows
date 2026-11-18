@@ -23,3 +23,8 @@ tools/dongle-recording/
 
 # Game images (copyrighted, and too big for git).
 *.squashfs
+
+# Decrypted game data and scratch captures (not source).
+decrypted-bbhd-conf/
+tmp-*/
+__pycache__/

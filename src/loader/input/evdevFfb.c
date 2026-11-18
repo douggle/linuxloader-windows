@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "evdevFfb.h"
+#include "../config/config.h"
 #include "../log/log.h"
 
 typedef struct
@@ -74,8 +75,10 @@ static int ffbOpenPath(const char *path)
 
     if (test_bit(FF_GAIN, features))
         sendEvent(FF_GAIN, 0xffff);
-    // The game centers the wheel itself.
-    setAutocenter(0);
+    // The game centers the wheel itself, unless the config asks for a resting
+    // spring (FFB_AUTOCENTER): a wheel without one of its own stays where it
+    // was left, which shows up as a permanent slight turn in game.
+    setAutocenter(getConfig()->arcadeInputs.ffb_autocenter);
 
     if (ffbConstant)
     {

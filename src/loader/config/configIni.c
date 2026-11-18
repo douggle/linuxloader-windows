@@ -167,7 +167,8 @@ int createDefaultIni(const char *filePath)
     fprintf(file, "# ID4 and ID5 network configuration per seat\nID_IP_SEAT_1 = \"192.168.1.2\"\nID_IP_SEAT_2 = \"192.168.1.3\"\n\n");
     fprintf(file, "# Sets the IP address and Netmask for Outrun link (you have to put your NIC ip)\n");
     fprintf(file, "OR2_IPADDRESS = \"192.168.1.2\"\nOR2_NETMASK = \"255.255.255.0\"\n\n");
-    fprintf(file, "# Harley / Hummer and R-Tuned IP address for each Cabinet\n");
+    fprintf(file, "# IP address for each Cabinet: Harley / Hummer and R-Tuned's link\n");
+    fprintf(file, "# pair, and Cruis'n Blast's link address (its machine ID picks one)\n");
     fprintf(file, "IP_CAB1 = \"192.168.1.2\"\nIP_CAB2 = \"192.168.1.3\"\nIP_CAB3 = \"192.168.1.4\"\nIP_CAB4 = \"192.168.1.5\"\n\n");
     fprintf(file, "# Sets the IP address of each cabinet for network play in 2Spicy\n");
     fprintf(file, "2SPICY_IP_CAB1 = \"192.168.1.2\"\n2SPICY_IP_CAB2 = \"192.168.1.3\"\n\n");

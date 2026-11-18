@@ -12,6 +12,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <time.h>
@@ -213,7 +214,25 @@ void namcoEs1Wmmt4StartTerminal(const char *serial)
     if (started)
         return;
     started = 1;
-    snprintf(heartbeatSerial, sizeof(heartbeatSerial), "%s", serial);
+    // WMMT4_TERMINAL_SERIAL: the serial the terminal announces. Unset keeps the
+    // drive's own (what the Pacloader fork did); "terminal" copies it and sets
+    // byte 5 to '1' (the PCB-type digit: the drive's serial ends ...0, the
+    // terminal's ...1), anything else is used verbatim. The game logs its own
+    // serial as "network: start(): pcb_serial=...", so the two are compared in
+    // the same log.
+    {
+        const char *choice = getenv("WMMT4_TERMINAL_SERIAL");
+
+        snprintf(heartbeatSerial, sizeof(heartbeatSerial), "%s", serial);
+        if (choice && !strcmp(choice, "terminal"))
+        {
+            if (strlen(heartbeatSerial) > 5)
+                heartbeatSerial[5] = '1';
+        }
+        else if (choice && choice[0])
+            snprintf(heartbeatSerial, sizeof(heartbeatSerial), "%s", choice);
+        fprintf(stderr, "WMMT4 terminal: announcing pcb_serial %s (drive's %s)\n", heartbeatSerial, serial);
+    }
     if (pthread_create(&thread, NULL, terminalThread, NULL) == 0)
         pthread_detach(thread);
     else
