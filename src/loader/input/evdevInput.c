@@ -874,10 +874,13 @@ typedef struct
  */
 static double applyAnalogueCentre(double scaled, double centre)
 {
+    // 0 disables the mapping; 1 leaves nothing of the travel, so is not a
+    // centre at all. 0.5 is the middle of the range already, and the two
+    // branches below both return exactly scaled for it.
     if (centre <= 0.0 || centre >= 1.0)
         return scaled;
     if (scaled <= centre)
-        return centre > 0.0 ? 0.5 * (scaled / centre) : 0.0;
+        return 0.5 * scaled / centre;
     return 0.5 + 0.5 * (scaled - centre) / (1.0 - centre);
 }
 
